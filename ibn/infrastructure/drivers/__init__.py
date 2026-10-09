@@ -10,11 +10,9 @@ Ideas for later:
 from .base import Driver
 from .netmiko_cli import NETMIKO_TYPES, NetmikoDriver
 from .simulated import SimulatedDriver
-from .web_gui import WebGuiDriver
 
 DRIVERS: dict[str, type[Driver]] = {
     **{vendor: NetmikoDriver for vendor in NETMIKO_TYPES},  # cisco_ios, arista_eos, ...
-    "web_gui": WebGuiDriver,
     "simulated": SimulatedDriver,
 }
 

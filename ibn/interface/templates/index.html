@@ -68,11 +68,10 @@
       <select id="d-vendor">
         <option>cisco_ios</option><option>cisco_nxos</option>
         <option>arista_eos</option><option>huawei</option><option>mikrotik_routeros</option>
-        <option>web_gui</option><option>simulated</option>
+        <option>simulated</option>
       </select>
-      <select id="d-protocol"><option>ssh</option><option>telnet</option><option>http</option></select>
+      <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
     </div>
-    <input id="d-url" placeholder="Web page URL (only for web_gui, e.g. http://192.168.1.254)">
     <div class="row">
       <input id="d-username" placeholder="Login username (optional, else from .env)">
       <input id="d-password" type="password" placeholder="Login password (optional)">
@@ -154,12 +153,12 @@ async function load() {
 
 function edit(name) {
   const d = window.devices.find(x => x.name === name);
-  for (const k of ["name", "ip", "vendor", "protocol", "url", "username"]) document.getElementById("d-" + k).value = d[k] || "";
+  for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
   document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
 }
 async function addDevice() {
   const d = {};
-  for (const k of ["name", "ip", "vendor", "protocol", "url", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
+  for (const k of ["name", "ip", "vendor", "protocol", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
   document.getElementById("d-password").value = "";
   show(await post("/api/devices", d)); load();
 }

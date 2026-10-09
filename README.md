@@ -8,7 +8,7 @@ The system turns it into device commands, checks they are safe, shows them to
 you, and when you click **Approve** it logs in to the device and applies them.
 If something fails, it undoes the change automatically.
 
-The project is deliberately small (about 25 short files, ~2,000 lines) so you can read
+The project is deliberately small (about 25 short files, ~1,450 lines) so you can read
 all of it. Every layer is one folder, and every "kind of thing" (LLM, vendor,
 database) can be swapped or extended without touching the other layers.
 
@@ -156,23 +156,10 @@ Each way of talking to a device is a **driver** class with the same 4 methods
 | vendor value | Driver | How |
 |---|---|---|
 | `cisco_ios`, `cisco_nxos`, `arista_eos`, `huawei`, `mikrotik_routeros` | `netmiko_cli.py` | SSH or Telnet with the [Netmiko](https://github.com/ktbyers/netmiko) library |
-| `web_gui` | `web_gui.py` | For home routers with only a web page (any brand). A small **browser agent**: opens the page in a real browser, numbers everything you can click or type into, and asks the AI for the next action (log in, open menus, fill a field, click Apply) until the task is done. Its "commands" are English, e.g. `Change the Wi-Fi name to Home5G`. Give the device a `url` (e.g. `http://192.168.1.254`) and its own login username/password. |
 | `simulated` | `simulated.py` | A fake device in memory, for learning and tests |
 
-How the browser agent works, step by step:
-
-```
-open router page -> list elements:  [0] <input id=Frm_Username> label="Username" value=""
-                                    [1] <input type=password id=Frm_Password> value=""
-                                    [2] <button> "Login"
-AI: fill [0] "{username}"  ->  AI: fill [1] "{password}"  ->  AI: click [2]
--> menus appear -> AI: click "Local Network" -> AI: click "WLAN" -> AI: fill SSID -> AI: click "Apply" -> done
-```
-
-- The AI never sees the router password: it writes `{password}` and the driver types the real one.
-- Read-only tasks ("Read the current Wi-Fi name") may only log in and click menus, never Apply/Save.
-- `SHOW_BROWSER=true` in `.env` lets you watch it work (nice for a demo).
-- `tests/test_web_gui.py` tests it against a fake router website (`tests/fake_router.py`).
+Home routers that only have a web page are not supported (an AI browser agent was
+tried, but a local AI on a laptop was too slow for it). A new driver can add them later.
 
 ---
 

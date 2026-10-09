@@ -40,10 +40,10 @@ The project follows your design diagram exactly. **Each layer is one folder** in
             ▼                                                                │
  ┌──────────────────────┐                                                    │
  │ 5. Infrastructure     │  ibn/infrastructure/ drivers that talk to devices ┘
- └──────────────────────┘   (SSH/Telnet, web pages) + discovery (ping, CDP)
+ └──────────────────────┘   (SSH/Telnet) + discovery (ping, CDP)
             │
             ▼
-   real devices (EVE-NG routers, your home router)
+   real devices (EVE-NG routers and switches)
 ```
 
 `ibn/pipeline.py` is the **glue**: it calls the layers in the right order.
@@ -140,7 +140,6 @@ Graduation-project/
 │   │       ├── __init__.py        [CORE]     the vendor → driver list
 │   │       ├── base.py            [CORE]     the rules every driver must follow
 │   │       ├── netmiko_cli.py     [CORE]     SSH/Telnet devices (Cisco, Arista, Huawei...)
-│   │       ├── web_gui.py         [OPTIONAL] AI browser agent for home routers
 │   │       └── simulated.py       [OPTIONAL] fake device for practice and tests
 │   │
 │   └── knowledge/                 SHARED COMPONENT
@@ -150,9 +149,7 @@ Graduation-project/
 │       └── neo4j_graph.py         [CORE*]    graph stored in Neo4j        (*you need one of the two)
 │
 ├── tests/                         [SUPPORT]  automatic tests (run: pytest)
-│   ├── test_ibn.py                           tests for the whole pipeline
-│   ├── test_web_gui.py                       tests for the home-router agent
-│   └── fake_router.py                        a fake router website used by those tests
+│   └── test_ibn.py                           tests for the whole pipeline
 │
 ├── data/                          [AUTO] your devices + history (knowledge.json). Not on GitHub.
 ├── venv/                          [AUTO] the installed libraries (thousands of files!). Ignore.
@@ -161,8 +158,8 @@ Graduation-project/
 ```
 
 **Why VS Code looked overwhelming:** `venv/` alone contains thousands of files
-(Flask, Netmiko, Playwright... all their code). None of it is yours. The real
-project is about **25 small files, ~2,000 lines** in total. The new
+(Flask, Netmiko, Neo4j... all their code). None of it is yours. The real
+project is about **25 small files, ~1,450 lines** in total. The new
 `.vscode/settings.json` hides the [AUTO] folders so you only see your code.
 
 ---
@@ -177,7 +174,7 @@ For each file: **what it does**, **why it exists**, **can it be removed?**
 Why: Python needs one "start here" file. *Needed.*
 
 **`start.bat` / `update.bat`** (Windows only). Double-click helpers. `start.bat` creates
-the `venv`, installs libraries and the browser (first time only), then runs `run.py`.
+the `venv`, installs libraries (first time only), then runs `run.py`.
 `update.bat` runs `git pull` and installs any new libraries.
 *Not needed by the program*: you could type the commands yourself. Kept because they save time.
 
@@ -191,12 +188,11 @@ the `venv`, installs libraries and the browser (first time only), then runs `run
 | `neo4j` | Neo4j storage | only if `KB_BACKEND=neo4j` |
 | `netmiko` | SSH/Telnet to devices | yes (for real devices) |
 | `paramiko<4` | SSH library under Netmiko; pinned because version 4+ can't talk to older Cisco IOS | yes |
-| `playwright` | real browser for `web_gui.py` | only for home routers |
 | `python-dotenv` | reads `.env` | yes |
 | `pytest` | runs tests | only for testing |
 
 **`.env`** (your copy) / **`.env.example`** (template). All settings in one place: which
-AI, which storage, device login, `DRY_RUN`, `SHOW_BROWSER`. Why a separate file: secrets
+AI, which storage, device login, `DRY_RUN`. Why a separate file: secrets
 (API keys, passwords) must never be uploaded to GitHub, and `.gitignore` protects `.env`.
 
 **`docker-compose.yml`**. One command (`docker compose up -d`) starts the Neo4j database.
@@ -274,7 +270,7 @@ request, answer in exactly this JSON shape".
 **`translator.py`** (136 lines). The "brain instructions":
 - `PLAN_SCHEMA`: the exact JSON shape of a plan (Part 1.4).
 - `SYSTEM_PROMPT`: rules for the AI (config vs check steps, use real interface names,
-  Cisco interface sub-mode, how to block traffic with ACLs, web_gui steps in English)
+  Cisco interface sub-mode, how to block traffic with ACLs)
   + **worked examples** (small models learn a lot from examples).
 - `translate()`: inserts your device list (with interface IPs, without passwords), asks
   the AI, then cleans the answer (removes `configure terminal`/`end`, which the driver adds itself).
@@ -313,7 +309,7 @@ Errors **block** the plan (no Approve button). Warnings are shown, you decide.
 `connect`, `disconnect`, `get_config` (backup), `send_config` (apply). Optional:
 `run_commands` (check steps), `get_interfaces`, `get_neighbors`.
 The control layer only calls these names, so it never needs to know if it's talking
-to Cisco over SSH, a home router web page, or (in the future) an SDN controller.
+to Cisco over SSH, a simulated device, or (in the future) an SDN controller.
 
 **`drivers/__init__.py`** (26 lines): **the registry**. A dictionary
 `vendor name → driver class`. `get_driver(device)` looks up the device's vendor here.
@@ -323,14 +319,6 @@ to Cisco over SSH, a home router web page, or (in the future) an SDN controller.
 (which knows 100+ vendors). `NETMIKO_TYPES` = our vendor name → (Netmiko type,
 "show config" command, "show interfaces" command). SSH or Telnet (`protocol` field).
 Detects device errors (`% Invalid input`...) so a rejected command raises an error → rollback.
-
-**`drivers/web_gui.py`** (340 lines, the biggest file): the **browser agent** for home
-routers with only a web page. Opens the page in a real browser (Playwright), logs in
-by simple rules (no AI), then loops: number the clickable elements → ask the AI for the
-next action → do it → repeat, max 15 steps / 5 minutes. The AI only sees `{password}`,
-never the real password. Read-only tasks can't click Apply/Save/Reboot.
-*Optional*: remove it (and `playwright` from requirements) if you don't need home routers.
-Status: works on the fake test router; on your real ZTE the local 7B model was too slow (Part 5).
 
 **`drivers/simulated.py`** (28 lines): a fake device in memory. A command containing
 "invalid" fails (to demo rollback). *Optional*, but the tests use it and it's great for demos.
@@ -361,9 +349,6 @@ links are `CONNECTED_TO` relationships, history is `(Device)-[:HAS_CHANGE]->(Cha
 (validation blocks dangerous commands, rollback works, check steps are read-only, the
 AI retries after errors...). Each test runs twice: with file storage and (if
 `TEST_NEO4J=1`) with Neo4j.
-**`test_web_gui.py`** + **`fake_router.py`**: a fake ZTE-like website and 3 tests of the
-browser agent (login, menus, frames, Save, wrong password, Wi-Fi password never touched).
-
 Run all tests: `venv\Scripts\python -m pytest`. **Run them after every change.** If they
 pass, you didn't break anything. *Not needed to run the program*, but they are your safety net.
 
@@ -382,16 +367,16 @@ drivers/ (__init__.py, base.py, netmiko_cli.py), knowledge/ (base.py + ONE of th
 
 | You could remove | Saves | You lose |
 |---|---|---|
-| `drivers/web_gui.py` + `playwright` + `tests/test_web_gui.py` + `tests/fake_router.py` | ~500 lines, the biggest piece | home-router support |
 | `neo4j_graph.py` + `docker-compose.yml` + `neo4j` library | ~80 lines + Docker | the "real graph database" (your original requirement) |
 | `file_graph.py` | ~70 lines | running without Docker; the tests use it |
 | `discovery.py` + 3 buttons | ~90 lines | ping scan, up/down, auto links, **interface IPs for the AI** |
 | `simulated.py` | ~30 lines | practising without devices; the tests use it |
 | `start.bat`, `update.bat`, `lab/`, `docs/` | nothing in the program | convenience and notes |
 
-**Recommendation: don't remove anything.** Each piece is small, separate and optional
-at runtime. If a feature isn't configured, its code simply never runs. The only piece
-worth removing for a simpler demo is `web_gui.py` (if you drop home routers).
+**Recommendation: don't remove anything more.** Each piece is small, separate and optional
+at runtime. If a feature isn't configured, its code simply never runs. (The home-router
+browser agent, `web_gui.py`, was already removed: it was the biggest piece and the local
+AI was too slow for it. Its idea is described in Part 6 if you want it back later.)
 
 ---
 
@@ -432,7 +417,7 @@ modified and extended. The rule is simple:
 | Validation = rules only | lab simulation before applying (Batfish), check after applying |
 | You must click "Find links & IPs" | automatic discovery every few minutes (closed loop) |
 | Config changes not saved on devices (`write memory`) | optional save step after success |
-| Web-router agent too slow with a local 7B model | Claude API, or "record once, replay without AI" |
+| No support for home routers that only have a web page | a browser-agent driver (Part 6) with Claude API |
 
 ---
 
@@ -448,6 +433,13 @@ modified and extended. The rule is simple:
 Create `drivers/restconf.py` with `class RestconfDriver(Driver)` and the 4 methods,
 then one line in `DRIVERS`. For SDN: `OnosDriver.send_config()` calls the controller's
 REST API instead of a device. The other layers don't change.
+
+### Add home routers that only have a web page (idea that was tried and removed)
+Write `drivers/web_gui.py` with a `WebGuiDriver(Driver)` that opens the router page in a
+real browser (Playwright library), logs in, then lets the AI pick the next click/fill
+until the task is done. It worked on a fake router but was too slow with a local 7B
+model; with the Claude API it would be fast. The old version is in the Git history
+(commit "Browser agent for web-page routers").
 
 ### Upgrade the AI
 - Use Claude: `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` in `.env`. No code change.
@@ -486,7 +478,6 @@ Add methods to `knowledge/base.py`, implement them in both storages, fill them f
 | **schema** | the exact allowed shape of some JSON |
 | **LLM / prompt** | the AI model / the instructions + question we send it |
 | **Netmiko / Paramiko** | Python libraries for SSH/Telnet to network devices |
-| **Playwright** | a library that controls a real browser |
 | **Neo4j / Cypher** | a graph database / its query language |
 | **venv** | a private folder of libraries for this project only |
 | **pytest** | the tool that runs the automatic tests |

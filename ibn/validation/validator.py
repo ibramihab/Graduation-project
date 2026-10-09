@@ -26,7 +26,7 @@ PHYSICAL_INTERFACE = re.compile(
     r"gig|gi|g|te|se|s)\s?(\d+(?:/\d+)+)", re.IGNORECASE)
 
 from ..infrastructure.drivers import DRIVERS
-from .rules import BLOCKED, CHECK_ALLOWED, CHECK_ALLOWED_WEB, WARN
+from .rules import BLOCKED, CHECK_ALLOWED, WARN
 
 
 def validate(plan: dict, kb) -> dict:
@@ -49,19 +49,18 @@ def validate(plan: dict, kb) -> dict:
         if not change.get("commands"):
             errors.append(f"{name}: no commands")
 
-        allowed = CHECK_ALLOWED_WEB if vendor == "web_gui" else CHECK_ALLOWED
         if change.get("type") == "check":
             for command in change.get("commands", []):
                 line = command.strip().lower()
                 # "show ... | redirect flash:x" would write a file, so pipes like that are refused
-                if not re.search(allowed, line) or re.search(r"\|\s*(redirect|tee|append)", line):
+                if not re.search(CHECK_ALLOWED, line) or re.search(r"\|\s*(redirect|tee|append)", line):
                     errors.append(f"{name}: '{command}' is not a read-only check command")
             continue  # read-only: no rollback or dangerous-command checks needed
 
         if not change.get("rollback"):
             warnings.append(f"{name}: no rollback commands, a failure can't be undone automatically")
         for command in change.get("commands", []):
-            if vendor != "web_gui" and re.search(CHECK_ALLOWED, command.strip().lower()):
+            if re.search(CHECK_ALLOWED, command.strip().lower()):
                 errors.append(f"{name}: '{command}' is a check command, it can't run in config mode")
 
         # Dangerous commands are blocked everywhere, even inside the rollback.

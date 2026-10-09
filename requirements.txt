@@ -4,6 +4,5 @@ requests        # intent layer: Ollama LLM (local) + web GUI driver
 neo4j           # knowledge base: graph database
 netmiko         # infrastructure: SSH / Telnet to CLI devices
 paramiko>=3.5.1,<4  # SSH library; 4+ dropped the old SSH algorithms older Cisco IOS needs
-playwright      # infrastructure: real browser for web-page routers (web_gui)
 python-dotenv   # reads the .env file
 pytest          # tests
