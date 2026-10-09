@@ -1,0 +1,14 @@
+{
+  // Hide folders that tools create automatically, so VS Code only shows the project's own files.
+  "files.exclude": {
+    "**/__pycache__": true,
+    "**/.pytest_cache": true,
+    "venv": true,
+    ".venv": true
+  },
+  // Don't search inside the installed libraries.
+  "search.exclude": {
+    "venv": true,
+    "ibn/interface/static": true
+  }
+}
