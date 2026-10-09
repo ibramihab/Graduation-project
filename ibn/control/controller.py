@@ -43,8 +43,11 @@ def apply_plan(plan: dict, kb) -> dict:
             _record(plan, results, kb, success=False)
             return {"success": False, "results": results}
 
-    _record(plan, results, kb, success=True)
-    return {"success": True, "results": results}
+    # A failed check (e.g. a ping that couldn't run) doesn't undo anything,
+    # but the result must still say "Failed", not "Done!".
+    success = not any(r["status"] == "check failed" for r in results)
+    _record(plan, results, kb, success=success)
+    return {"success": success, "results": results}
 
 
 def _check(device: dict, change: dict) -> dict:

@@ -93,6 +93,18 @@ def test_check_runs_without_changing_the_device(kb):
     assert "ping 10.2.3.3" not in FAKE_CONFIGS.get("R1", [])  # nothing was configured
 
 
+def test_failed_check_is_reported_as_failed(kb, monkeypatch):
+    from ibn.infrastructure.drivers.simulated import SimulatedDriver
+    def broken(self, commands):
+        raise TimeoutError("Read timed out")
+    monkeypatch.setattr(SimulatedDriver, "run_commands", broken)
+    llm = FakeLLM({"summary": "ping", "changes": [change("R1", ["ping 10.2.3.3"], [], type="check")]})
+    plan = pipeline.propose("ping R3 from R1", kb, llm)
+    result = pipeline.approve(plan["id"], kb)
+    assert not result["success"]
+    assert result["results"][0]["status"] == "check failed"
+
+
 def test_unknown_interface_is_refused(kb):
     kb.update_device("R1", interfaces=["Ethernet0/0 10.1.2.1", "Ethernet0/1 unassigned"])
     good = {"changes": [change("R1", ["interface e0/1", "description test"], ["interface e0/1", "no description"])]}
