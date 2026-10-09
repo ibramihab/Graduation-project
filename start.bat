@@ -6,7 +6,7 @@ REM First time only: create the virtual environment and install libraries
 if not exist venv\Scripts\python.exe (
     echo First run: installing libraries, please wait...
     python -m venv venv
-    venv\Scripts\python.exe -m pip install -r requirements.txt
+    venv\Scripts\python.exe -m pip install -q --disable-pip-version-check -r requirements.txt
 )
 
 REM First time only: create the settings file

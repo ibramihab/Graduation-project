@@ -4,7 +4,7 @@ REM Your .env settings and data\ folder (your devices) are NOT touched.
 cd /d "%~dp0"
 
 for /f %%i in ('git rev-parse HEAD') do set BEFORE=%%i
-git pull
+git pull -q
 if errorlevel 1 (
     echo.
     echo git pull failed. Send a screenshot of this window.
@@ -13,18 +13,27 @@ if errorlevel 1 (
 )
 for /f %%i in ('git rev-parse HEAD') do set AFTER=%%i
 
-REM Nothing new on GitHub (and libraries already installed): nothing else to do
-if "%BEFORE%"=="%AFTER%" if exist venv\Scripts\python.exe (
-    echo.
+if "%BEFORE%"=="%AFTER%" (
     echo No new changes. You already have the newest version.
-    pause
-    exit /b
+) else (
+    echo New changes downloaded:
+    git --no-pager log --format="  - %%s" %BEFORE%..%AFTER%
 )
 
-echo.
-echo New changes downloaded. Updating libraries...
-if not exist venv\Scripts\python.exe python -m venv venv
-venv\Scripts\python.exe -m pip install -r requirements.txt
+REM Install libraries only if they are missing or requirements.txt changed (quietly)
+if not exist venv\Scripts\python.exe (
+    echo.
+    echo Installing libraries, please wait...
+    python -m venv venv
+    venv\Scripts\python.exe -m pip install -q --disable-pip-version-check -r requirements.txt
+) else (
+    git diff --quiet %BEFORE% %AFTER% -- requirements.txt
+    if errorlevel 1 (
+        echo.
+        echo The list of libraries changed: updating them, please wait...
+        venv\Scripts\python.exe -m pip install -q --disable-pip-version-check -r requirements.txt
+    )
+)
 
 echo.
 echo Update finished. Now double-click start.bat
