@@ -93,6 +93,35 @@ def test_check_runs_without_changing_the_device(kb):
     assert "ping 10.2.3.3" not in FAKE_CONFIGS.get("R1", [])  # nothing was configured
 
 
+def test_unknown_interface_is_refused(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.1.2.1", "Ethernet0/1 unassigned"])
+    good = {"changes": [change("R1", ["interface e0/1", "description test"], ["interface e0/1", "no description"])]}
+    bad = {"changes": [change("R1", ["interface GigabitEthernet0/0", "description test"], ["x"])]}
+    assert validate(good, kb)["ok"]
+    assert "does not exist" in validate(bad, kb)["errors"][0]
+
+
+class LearningLLM:
+    """First answer is wrong, second (after seeing the errors) is right."""
+
+    def __init__(self):
+        self.requests = []
+
+    def ask_json(self, system, user, schema):
+        self.requests.append(user)
+        command = "interface GigabitEthernet0/0" if len(self.requests) == 1 else "interface Ethernet0/0"
+        return {"summary": "x", "changes": [change("R1", [command, "description x"], ["no description"])]}
+
+
+def test_ai_fixes_its_plan_after_validation_errors(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.1.2.1"])
+    llm = LearningLLM()
+    plan = pipeline.propose("describe R1's first port", kb, llm)
+    assert plan["validation"]["ok"] and plan["attempts"] == 2
+    assert "does not exist" in llm.requests[1]  # the errors were sent back to the AI
+    assert plan["intent"] == "describe R1's first port"
+
+
 def test_happy_path(kb):
     llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["conf t", "vlan 10", "name Sales"], ["no vlan 10"])]})
     plan = pipeline.propose("create vlan 10 on SW1", kb, llm)

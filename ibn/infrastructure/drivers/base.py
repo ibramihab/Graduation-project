@@ -31,7 +31,8 @@ class Driver(ABC):
         raise NotImplementedError(f"{type(self).__name__} can't run check commands")
 
     def get_interfaces(self) -> list[str]:
-        """Interfaces with an IP, e.g. ["Ethernet0/0 10.1.2.1"] (so the AI knows the IPs).
+        """Interfaces and their IP, e.g. ["Ethernet0/0 10.1.2.1", "Ethernet0/1 unassigned"]
+        (so the AI knows the real names and IPs).
         Optional: drivers that can't do this just return nothing."""
         return []
 

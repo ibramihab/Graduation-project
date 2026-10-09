@@ -99,6 +99,7 @@ async function sendIntent() {
   if (plan.error) { box.innerHTML = `<p class="error">${esc(plan.error)}</p>`; return; }
 
   let html = `<p><b>Plan:</b> ${esc(plan.summary)}</p>`;
+  if (plan.attempts > 1) html += `<p class="warn">The AI's first plan failed the safety checks, so it corrected it.</p>`;
   for (const c of plan.changes) {
     const kind = c.type === "check" ? "check (read-only, normal mode)" : "config (changes the device)";
     html += `<p><b>${esc(c.device)}</b> &mdash; ${kind}</p><pre>${esc(c.commands.join("\n"))}</pre>`;

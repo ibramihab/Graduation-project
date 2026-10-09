@@ -8,6 +8,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
   5. no dangerous commands (rules.py)
   6. "check" steps only contain read-only commands (ping, show...), and
      "config" steps don't contain them (they only work outside config mode)
+  7. physical interfaces in the commands (Ethernet0/0, Gi0/1...) really exist
+     on the device (we know them from "Find links & IPs")
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -16,6 +18,12 @@ Ideas for later: test the config in a lab (GNS3/EVE-NG) or with Batfish,
 check for IP conflicts using the knowledge base, ask a second LLM to review.
 """
 import re
+
+# A physical interface written in a command: "Ethernet0/0", "Gi0/1", "fa 0/2", "Serial0/0/0".
+# Needs a "/" in the number, so it never matches Loopback5, Tunnel1, Vlan10 or IP addresses.
+PHYSICAL_INTERFACE = re.compile(
+    r"\b(ethernet|fastethernet|gigabitethernet|tengigabitethernet|serial|eth|et|e|fa|f|"
+    r"gig|gi|g|te|se|s)\s?(\d+(?:/\d+)+)", re.IGNORECASE)
 
 from ..infrastructure.drivers import DRIVERS
 from .rules import BLOCKED, CHECK_ALLOWED, WARN
@@ -66,4 +74,22 @@ def validate(plan: dict, kb) -> dict:
                 if re.search(pattern, command.strip().lower()):
                     warnings.append(f"{name}: '{command}' {reason}")
 
+        # Interface names must exist on the device (if we know its interfaces).
+        known = [i.split()[0] for i in device.get("interfaces") or []]
+        if known:
+            for command in change.get("commands", []) + change.get("rollback", []):
+                for kind, number in PHYSICAL_INTERFACE.findall(command):
+                    if not _interface_exists(kind, number, known):
+                        errors.append(f"{name}: interface '{kind}{number}' does not exist "
+                                      f"(it has: {', '.join(known)})")
+
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _interface_exists(kind: str, number: str, known: list[str]) -> bool:
+    """'Gi0/1' matches 'GigabitEthernet0/1', 'e0/0' matches 'Ethernet0/0'."""
+    for name in known:
+        match = re.match(r"([A-Za-z-]+)([\d/]+)$", name)
+        if match and match[1].lower().startswith(kind.lower()) and match[2] == number:
+            return True
+    return False

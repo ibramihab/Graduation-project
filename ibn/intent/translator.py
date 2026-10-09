@@ -58,7 +58,17 @@ Rules:
 - Use the real interface names and IP addresses from "interfaces" below.
   To reach a device, ping one of ITS interface IPs (not the 192.168.x management IP,
   unless the user asks for management).
+- Use ONLY interface names that appear in that device's "interfaces"
+  (e.g. if it has "Ethernet0/0", never write "GigabitEthernet0/0").
 - On Cisco, VLANs are created on switches (names starting with SW).
+- Cisco interface settings: first a line "interface <name>", then its settings on the
+  next lines. Example: ["interface Ethernet0/0", "ip access-group BLOCK in"].
+  Never write a setting and the interface on one line.
+- To block traffic, use an extended access list with a "deny" for the traffic to block
+  and "permit ip any any" at the end. Apply it INBOUND ("in") on the interfaces of the
+  device that should not receive the traffic (outbound ACLs do not filter traffic the
+  router creates itself). The rollback removes it from the interfaces first, then
+  deletes the list.
 - For vendor "web_gui" (home routers with only a web page), write short English steps
   instead of CLI, for example "set wifi name to Home5G".
 - If the request is unclear or impossible, return no steps and explain why in "summary".
@@ -81,6 +91,19 @@ Request: "add loopback 5 with ip 5.5.5.5/32 on R2 and show the interfaces"
               "rollback": ["no interface Loopback5"]},
              {"device": "R2", "type": "check",
               "commands": ["show ip interface brief"], "rollback": []}]}
+
+Request: "stop the network 10.0.1.0/24 from reaching R2"   (R2 receives it on Ethernet0/0)
+{"summary": "On R2, deny traffic from 10.0.1.0/24 coming in on Ethernet0/0",
+ "changes": [{"device": "R2", "type": "config",
+              "commands": ["ip access-list extended BLOCK-10-0-1",
+                           "deny ip 10.0.1.0 0.0.0.255 any",
+                           "permit ip any any",
+                           "interface Ethernet0/0",
+                           "ip access-group BLOCK-10-0-1 in"],
+              "rollback": ["interface Ethernet0/0",
+                           "no ip access-group BLOCK-10-0-1 in",
+                           "exit",
+                           "no ip access-list extended BLOCK-10-0-1"]}]}
 
 Devices:
 {devices}

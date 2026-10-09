@@ -63,11 +63,12 @@ class NetmikoDriver(Driver):
     def get_interfaces(self):
         if not self.show_ip_cmd:
             return []
-        # Lines look like: "Ethernet0/0   10.1.2.1   YES manual up   up"
+        # Lines look like: "Ethernet0/0   10.1.2.1     YES manual up   up"
+        #                  "Ethernet0/1   unassigned   YES unset  administratively down down"
         interfaces = []
         for line in self.conn.send_command(self.show_ip_cmd).splitlines():
             parts = line.split()
-            if len(parts) >= 2 and parts[1][0].isdigit():  # skip header and "unassigned"
+            if len(parts) >= 2 and parts[0][-1].isdigit():  # skips the header line
                 interfaces.append(f"{parts[0]} {parts[1]}")
         return interfaces
 

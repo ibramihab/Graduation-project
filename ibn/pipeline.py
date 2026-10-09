@@ -12,12 +12,22 @@ from .intent import translate
 from .validation import validate
 
 PENDING: dict[str, dict] = {}  # plans waiting for the user to approve them
+ATTEMPTS = 2  # if validation finds mistakes, the AI gets one more try to fix them
 
 
 def propose(text: str, kb, llm) -> dict:
     """Steps 1-3: understand the request and check it. Nothing is changed yet."""
-    plan = translate(text, kb.list_devices(), llm)
-    plan["validation"] = validate(plan, kb)
+    request = text
+    for attempt in range(1, ATTEMPTS + 1):
+        plan = translate(request, kb.list_devices(), llm)
+        plan["validation"] = validate(plan, kb)
+        if plan["validation"]["ok"] or not plan["changes"]:
+            break
+        # Tell the AI what was wrong and let it try again.
+        request = (text + "\n\nYour previous plan was rejected by the safety checks:\n- "
+                   + "\n- ".join(plan["validation"]["errors"]) + "\nFix these problems.")
+    plan["intent"] = text
+    plan["attempts"] = attempt
     plan["id"] = uuid.uuid4().hex[:8]
     if plan["validation"]["ok"]:
         PENDING[plan["id"]] = plan
