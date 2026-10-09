@@ -13,6 +13,7 @@ all of it. Every layer is one folder, and every "kind of thing" (LLM, vendor,
 database) can be swapped or extended without touching the other layers.
 
 📘 **New to the code?** Read [`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md): how it works, every file explained, and how to grow it.
+📝 **What changed recently?** See [`CHANGELOG.md`](CHANGELOG.md).
 
 ---
 

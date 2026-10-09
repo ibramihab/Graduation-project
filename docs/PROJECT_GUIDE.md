@@ -108,6 +108,7 @@ Graduation-project/
 ├── .env.example                   [SUPPORT]  template for .env
 ├── docker-compose.yml             [OPTIONAL] starts the Neo4j graph database
 ├── README.md                      [SUPPORT]  short user manual
+├── CHANGELOG.md                   [SUPPORT]  list of every change, newest first
 ├── docs/PROJECT_GUIDE.md          [SUPPORT]  this guide
 ├── lab/VPN_lab_config_...txt      [SUPPORT]  the Cisco configs for your EVE-NG lab (notes, not code)
 ├── .gitignore                     [SUPPORT]  tells Git which files never to upload
