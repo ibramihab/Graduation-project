@@ -83,7 +83,6 @@
         {% endfor %}
       </select>
       <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
-      <input id="d-port" placeholder="Port (optional, e.g. 2201 behind PAT)" style="max-width:150px">
     </div>
     <div class="row">
       <input id="d-username" placeholder="Login username (optional, else from .env)">
@@ -166,7 +165,7 @@ async function load() {
 
   let rows = "<tr><th>Name</th><th>IP</th><th>Vendor</th><th>State</th><th></th></tr>";
   for (const d of t.devices) {
-    rows += `<tr><td>${esc(d.name)}</td><td>${esc(d.ip)}${d.port ? ":" + esc(d.port) : ""}</td><td>${esc(d.vendor)}</td>
+    rows += `<tr><td>${esc(d.name)}</td><td>${esc(d.ip)}</td><td>${esc(d.vendor)}</td>
       <td class="${esc(d.state)}">${esc(d.state || "?")}</td>
       <td><button class="secondary" onclick="history_('${esc(d.name)}')">History</button>
           <button class="secondary" onclick="edit('${esc(d.name)}')">Edit</button>
@@ -263,12 +262,12 @@ async function criticalDevices() {
 
 function edit(name) {
   const d = window.devices.find(x => x.name === name);
-  for (const k of ["name", "ip", "vendor", "protocol", "port", "username"]) document.getElementById("d-" + k).value = d[k] || "";
+  for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
   document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
 }
 async function addDevice() {
   const d = {};
-  for (const k of ["name", "ip", "vendor", "protocol", "port", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
+  for (const k of ["name", "ip", "vendor", "protocol", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
   document.getElementById("d-password").value = "";
   show(await post("/api/devices", d)); load();
 }
