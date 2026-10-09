@@ -39,10 +39,10 @@ text ─► intent.translate() ─► validation.validate() ─► [you click Ap
 | Step | File | What it does |
 |---|---|---|
 | You type a request | `interface/templates/index.html` | The page sends it to `POST /api/intent` |
-| **Intent** | `intent/translator.py` | Sends the request + the device list (no passwords) to the LLM. The LLM must answer in a fixed JSON shape: for each device, `commands` and `rollback` (undo) commands. |
+| **Intent** | `intent/translator.py` | Sends the request + the device list with their interface IPs (no passwords) to the LLM. The LLM must answer in a fixed JSON shape: a list of steps, each with a device, a `type`, `commands` and `rollback` (undo) commands. Type `config` changes the device (configuration mode); type `check` runs read-only commands like `ping` / `show` (normal mode, no rollback). |
 | **Validation** | `validation/validator.py` + `rules.py` | Device exists? Vendor supported? Device up? Commands present? Any dangerous command (`reload`, `erase`, `no username`, ...)? Errors **block** the plan; warnings are shown to you. |
 | You click Approve | `pipeline.py` | The plan is validated **again** (the network could have changed). |
-| **Control** | `control/controller.py` | For each device: connect, save a config backup to the knowledge base, send commands. If any device fails, the rollback runs on every device already changed. Everything goes into the device's history. |
+| **Control** | `control/controller.py` | For each `config` step: connect, save a config backup to the knowledge base, send commands. If any device fails, the rollback runs on every device already changed. `check` steps just run and show their output. Everything goes into the device's history. |
 | **Infrastructure** | `infrastructure/drivers/` | The code that actually talks to devices (see below). |
 
 ---
@@ -138,7 +138,7 @@ Kept as simple as possible (`infrastructure/discovery.py`):
 | Button | How it works |
 |---|---|
 | **Scan (ping)** | Pings every address in a subnet (64 at a time). Each answer becomes a device called `host-<ip>`, and we check if ports 22/23/80 are open (SSH/Telnet/Web). The vendor is `unknown`: click **Edit** to set it and rename it. |
-| **Find links (CDP)** | Logs in to each device and runs `show cdp neighbors detail` (Cisco). Neighbors we know become links in the graph. |
+| **Find links & IPs (CDP)** | Logs in to each device, saves its interface IPs (`show ip interface brief`, so the AI knows them) and runs `show cdp neighbors detail` (Cisco). Neighbors we know become links in the graph. |
 | **Refresh up/down** | Pings every known device and saves `up` / `down`. Validation refuses to change a device that is down. |
 
 On Linux, `ping` must be installed (`sudo apt install iputils-ping`).

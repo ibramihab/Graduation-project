@@ -48,8 +48,8 @@ def kb(request, tmp_path):
     return kb
 
 
-def change(device, commands, rollback):
-    return {"device": device, "commands": commands, "rollback": rollback}
+def change(device, commands, rollback, type="config"):
+    return {"device": device, "type": type, "commands": commands, "rollback": rollback}
 
 
 def test_knowledge_base_graph(kb):
@@ -68,6 +68,29 @@ def test_validation_blocks_dangerous_commands(kb):
 def test_validation_blocks_unknown_device(kb):
     plan = {"changes": [change("R9", ["vlan 10"], ["no vlan 10"])]}
     assert "not in the knowledge base" in validate(plan, kb)["errors"][0]
+
+
+def test_check_steps_are_read_only(kb):
+    ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
+    assert validate(ok, kb)["ok"]
+    for bad in (["vlan 10"], ["show run | redirect flash:x"]):
+        plan = {"changes": [change("R1", bad, [], type="check")]}
+        assert not validate(plan, kb)["ok"]
+
+
+def test_ping_in_config_mode_is_refused(kb):
+    plan = {"changes": [change("R1", ["ping 10.2.3.3"], ["x"])]}
+    assert "can't run in config mode" in validate(plan, kb)["errors"][0]
+
+
+def test_check_runs_without_changing_the_device(kb):
+    llm = FakeLLM({"summary": "ping", "changes": [change("R1", ["ping 10.2.3.3"], [], type="check")]})
+    plan = pipeline.propose("ping R3 from R1", kb, llm)
+    result = pipeline.approve(plan["id"], kb)
+    assert result["success"]
+    assert result["results"][0]["status"] == "checked"
+    assert "ping 10.2.3.3" in result["results"][0]["output"]
+    assert "ping 10.2.3.3" not in FAKE_CONFIGS.get("R1", [])  # nothing was configured
 
 
 def test_happy_path(kb):

@@ -1,11 +1,15 @@
 """Control layer: applies an approved plan, and undoes it if anything fails.
 
-For each device in the plan:
-  1. connect (driver picked by vendor)
-  2. save a backup of the current config in the knowledge base
-  3. send the commands
-If ANY device fails, we run the rollback commands on every device we already
+For each step in the plan:
+  "config" step:
+    1. connect (driver picked by vendor)
+    2. save a backup of the current config in the knowledge base
+    3. send the commands (configuration mode)
+  "check" step (ping, show...):
+    run the commands in normal mode and show the output. Nothing to undo.
+If ANY config step fails, we run the rollback commands on every device we already
 changed (newest first), so the network goes back to how it was.
+A failed check (e.g. we could not log in) is reported but does not undo anything.
 Everything is written to the device's history in the knowledge base.
 """
 from datetime import datetime
@@ -20,6 +24,9 @@ def apply_plan(plan: dict, kb) -> dict:
 
     for change in plan["changes"]:
         device = kb.get_device(change["device"])
+        if change.get("type") == "check":
+            results.append(_check(device, change))
+            continue
         try:
             if settings.DRY_RUN:
                 output = "DRY RUN - nothing was sent:\n" + "\n".join(change["commands"])
@@ -38,6 +45,18 @@ def apply_plan(plan: dict, kb) -> dict:
 
     _record(plan, results, kb, success=True)
     return {"success": True, "results": results}
+
+
+def _check(device: dict, change: dict) -> dict:
+    try:
+        if settings.DRY_RUN:
+            output = "DRY RUN - nothing was sent:\n" + "\n".join(change["commands"])
+        else:
+            with get_driver(device) as driver:
+                output = driver.run_commands(change["commands"])
+        return {"device": device["name"], "status": "checked", "output": output}
+    except Exception as error:
+        return {"device": device["name"], "status": "check failed", "output": str(error)}
 
 
 def _rollback(changes: list[dict], kb) -> list[dict]:
@@ -62,6 +81,7 @@ def _record(plan: dict, results: list[dict], kb, success: bool) -> None:
         kb.record_change(change["device"], {
             "time": time,
             "intent": plan.get("intent", ""),
+            "type": change.get("type", "config"),
             "commands": change["commands"],
             "success": success,
             "results": [r for r in results if r["device"] == change["device"]],

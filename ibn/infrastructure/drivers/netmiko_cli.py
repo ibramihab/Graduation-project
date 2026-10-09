@@ -9,13 +9,14 @@ from netmiko import ConnectHandler
 from ... import settings
 from .base import Driver
 
-# our vendor name -> (netmiko device type, command that shows the config)
+# our vendor name -> (netmiko device type, command that shows the config,
+#                     command that lists interface IPs)
 NETMIKO_TYPES = {
-    "cisco_ios": ("cisco_ios", "show running-config"),
-    "cisco_nxos": ("cisco_nxos", "show running-config"),
-    "arista_eos": ("arista_eos", "show running-config"),
-    "huawei": ("huawei", "display current-configuration"),
-    "mikrotik_routeros": ("mikrotik_routeros", "/export"),
+    "cisco_ios": ("cisco_ios", "show running-config", "show ip interface brief"),
+    "cisco_nxos": ("cisco_nxos", "show running-config", "show ip interface brief"),
+    "arista_eos": ("arista_eos", "show running-config", "show ip interface brief"),
+    "huawei": ("huawei", "display current-configuration", "display ip interface brief"),
+    "mikrotik_routeros": ("mikrotik_routeros", "/export", ""),
 }
 
 # Text that means the device did not accept a command.
@@ -24,7 +25,7 @@ ERROR_MARKERS = ["% Invalid", "% Incomplete", "% Ambiguous", "% Unknown", "Error
 
 class NetmikoDriver(Driver):
     def connect(self):
-        device_type, self.show_config_cmd = NETMIKO_TYPES[self.device["vendor"]]
+        device_type, self.show_config_cmd, self.show_ip_cmd = NETMIKO_TYPES[self.device["vendor"]]
         if self.device.get("protocol") == "telnet":
             device_type += "_telnet"
         self.conn = ConnectHandler(
@@ -50,6 +51,25 @@ class NetmikoDriver(Driver):
             if marker in output:
                 raise RuntimeError(f"Device rejected a command:\n{output}")
         return output
+
+    def run_commands(self, commands):
+        output = []
+        for command in commands:
+            # read_timeout: a ping to an unreachable address can take ~10-20 seconds
+            result = self.conn.send_command(command, read_timeout=60)
+            output.append(f"{self.device['name']}# {command}\n{result}")
+        return "\n\n".join(output)
+
+    def get_interfaces(self):
+        if not self.show_ip_cmd:
+            return []
+        # Lines look like: "Ethernet0/0   10.1.2.1   YES manual up   up"
+        interfaces = []
+        for line in self.conn.send_command(self.show_ip_cmd).splitlines():
+            parts = line.split()
+            if len(parts) >= 2 and parts[1][0].isdigit():  # skip header and "unassigned"
+                interfaces.append(f"{parts[0]} {parts[1]}")
+        return interfaces
 
     def get_neighbors(self):
         # Cisco Discovery Protocol tells us who is plugged into this device.

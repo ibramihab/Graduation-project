@@ -3,6 +3,7 @@
 1. scan_subnet: ping every address in a subnet -> who is alive?
 2. check which management ports are open (22 SSH, 23 Telnet, 80 web)
 3. discover_links: ask devices who their neighbors are (Cisco CDP)
+   and which IP addresses their interfaces have
 
 Ideas for later: SNMP, LLDP, reading ARP/MAC tables, traceroute.
 """
@@ -72,7 +73,8 @@ def refresh_states(kb) -> None:
 
 
 def discover_links(kb) -> list[str]:
-    """Log in to each device and ask for its neighbors. Returns any errors."""
+    """Log in to each device, save its interface IPs and ask for its neighbors.
+    Returns any errors."""
     names = {d["name"] for d in kb.list_devices()}
     errors = []
     for device in kb.list_devices():
@@ -80,6 +82,7 @@ def discover_links(kb) -> list[str]:
             continue  # e.g. "unknown" devices found by the ping scan: we can't log in
         try:
             with get_driver(device) as driver:
+                kb.update_device(device["name"], interfaces=driver.get_interfaces())
                 for neighbor in driver.get_neighbors():
                     if neighbor in names:
                         kb.add_link(device["name"], neighbor)

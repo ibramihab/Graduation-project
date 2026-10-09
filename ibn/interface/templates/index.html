@@ -46,7 +46,7 @@
       <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
       <button class="secondary" onclick="discover()">Scan (ping)</button>
     </div>
-    <button class="secondary" onclick="post('/api/discover-links').then(r => { show(r); load(); })">Find links (CDP)</button>
+    <button class="secondary" onclick="post('/api/discover-links').then(r => { show(r); load(); })">Find links &amp; IPs (CDP)</button>
     <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
     <div id="msg"></div>
   </section>
@@ -100,8 +100,10 @@ async function sendIntent() {
 
   let html = `<p><b>Plan:</b> ${esc(plan.summary)}</p>`;
   for (const c of plan.changes) {
-    html += `<p><b>${esc(c.device)}</b></p><pre>${esc(c.commands.join("\n"))}</pre>
-             <details><summary>Rollback (undo) commands</summary><pre>${esc(c.rollback.join("\n"))}</pre></details>`;
+    const kind = c.type === "check" ? "check (read-only, normal mode)" : "config (changes the device)";
+    html += `<p><b>${esc(c.device)}</b> &mdash; ${kind}</p><pre>${esc(c.commands.join("\n"))}</pre>`;
+    if (c.type !== "check")
+      html += `<details><summary>Rollback (undo) commands</summary><pre>${esc(c.rollback.join("\n"))}</pre></details>`;
   }
   const v = plan.validation;
   html += v.errors.map(e => `<p class="error">&#10007; ${esc(e)}</p>`).join("");

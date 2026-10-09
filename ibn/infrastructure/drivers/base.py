@@ -25,6 +25,16 @@ class Driver(ABC):
     def send_config(self, commands: list[str]) -> str:
         """Apply the commands. Raise an exception if the device reports an error."""
 
+    def run_commands(self, commands: list[str]) -> str:
+        """Run read-only commands (ping, show...) in normal/exec mode, return the output.
+        Optional: drivers that can't do this raise an error."""
+        raise NotImplementedError(f"{type(self).__name__} can't run check commands")
+
+    def get_interfaces(self) -> list[str]:
+        """Interfaces with an IP, e.g. ["Ethernet0/0 10.1.2.1"] (so the AI knows the IPs).
+        Optional: drivers that can't do this just return nothing."""
+        return []
+
     def get_neighbors(self) -> list[str]:
         """Names of directly connected devices (for topology discovery).
         Optional: drivers that can't do this just return nothing."""

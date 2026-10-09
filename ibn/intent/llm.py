@@ -49,6 +49,7 @@ class OllamaLLM:
             "model": self.model,
             "stream": False,
             "format": schema,  # Ollama also supports forcing a JSON schema
+            "options": {"temperature": 0},  # no randomness: small models make fewer mistakes
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
         })

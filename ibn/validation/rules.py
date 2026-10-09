@@ -27,3 +27,7 @@ WARN = [
     (r"^no (vlan|interface|router)", "removes something that may be in use"),
     (r"access-list|access-group", "a firewall rule can block traffic, including ours"),
 ]
+
+# Commands allowed in a "check" step (read-only, exec mode). Anything else is refused,
+# so a "check" can never change the device.
+CHECK_ALLOWED = r"^(ping|traceroute|show|display)\b"

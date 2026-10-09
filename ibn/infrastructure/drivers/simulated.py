@@ -23,3 +23,6 @@ class SimulatedDriver(Driver):
                 raise RuntimeError(f"% Invalid input detected: {command}")
             FAKE_CONFIGS[self.device["name"]].append(command)
         return "\n".join(f"{self.device['name']}(config)# {c}" for c in commands)
+
+    def run_commands(self, commands):
+        return "\n".join(f"{self.device['name']}# {c}\n(simulated output)" for c in commands)
