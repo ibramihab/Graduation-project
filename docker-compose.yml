@@ -1,0 +1,14 @@
+# Starts the Neo4j graph database:   docker compose up -d
+# Then open http://localhost:7474  (user: neo4j, password: password123)
+services:
+  neo4j:
+    image: neo4j:5
+    ports:
+      - "7474:7474"   # web browser to look at the graph
+      - "7687:7687"   # the port our Python code uses
+    environment:
+      NEO4J_AUTH: neo4j/password123
+    volumes:
+      - neo4j_data:/data
+volumes:
+  neo4j_data:

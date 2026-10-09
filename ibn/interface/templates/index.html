@@ -1,0 +1,173 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Simple IBN</title>
+<!-- vis-network draws the topology graph (bundled in static/ so it works without internet) -->
+<script src="/static/vis-network.min.js"></script>
+<style>
+  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #222; }
+  header { background: #0b5345; color: white; padding: 12px 20px; }
+  main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
+  section { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px #0002; }
+  h2 { margin-top: 0; font-size: 18px; }
+  textarea, input, select { width: 100%; box-sizing: border-box; padding: 8px; margin: 4px 0; font: inherit; }
+  button { background: #0b5345; color: white; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer; margin: 4px 4px 4px 0; }
+  button.secondary { background: #607d8b; }
+  button.danger { background: #c0392b; }
+  pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
+  table { width: 100%; border-collapse: collapse; font-size: 14px; }
+  td, th { border-bottom: 1px solid #ddd; padding: 6px; text-align: left; }
+  .error { color: #c0392b; } .warn { color: #b9770e; } .ok { color: #1e8449; }
+  .up { color: #1e8449; font-weight: bold; } .down { color: #c0392b; font-weight: bold; }
+  #graph { height: 320px; border: 1px solid #ddd; border-radius: 6px; }
+  .row { display: flex; gap: 6px; } .row > * { flex: 1; }
+  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+</style>
+</head>
+<body>
+<header><b>Simple IBN</b> &mdash; say what you want, check it, approve it</header>
+<main>
+
+  <!-- 1. INTENT: type -> plan -> approve -->
+  <section>
+    <h2>1. What do you want?</h2>
+    <textarea id="intent" rows="3" placeholder="e.g. Create VLAN 10 named Sales on SW1"></textarea>
+    <button onclick="sendIntent()">Make a plan</button>
+    <div id="plan"></div>
+  </section>
+
+  <!-- TOPOLOGY -->
+  <section>
+    <h2>Network topology</h2>
+    <div id="graph"></div>
+    <div class="row">
+      <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
+      <button class="secondary" onclick="discover()">Scan (ping)</button>
+    </div>
+    <button class="secondary" onclick="post('/api/discover-links').then(r => { show(r); load(); })">Find links (CDP)</button>
+    <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
+    <div id="msg"></div>
+  </section>
+
+  <!-- DEVICES -->
+  <section>
+    <h2>Devices</h2>
+    <table id="devices"></table>
+  </section>
+
+  <section>
+    <h2>Add / edit a device</h2>
+    <p style="font-size:13px">Same name = update. Use vendor <b>simulated</b> to test without real devices.</p>
+    <div class="row">
+      <input id="d-name" placeholder="Name (R1)">
+      <input id="d-ip" placeholder="IP (192.168.1.1)">
+    </div>
+    <div class="row">
+      <select id="d-vendor">
+        <option>simulated</option><option>cisco_ios</option><option>cisco_nxos</option>
+        <option>arista_eos</option><option>huawei</option><option>mikrotik_routeros</option>
+        <option>web_gui</option>
+      </select>
+      <select id="d-protocol"><option>ssh</option><option>telnet</option><option>http</option></select>
+    </div>
+    <input id="d-url" placeholder="Web page URL (only for web_gui)">
+    <button onclick="addDevice()">Save device</button>
+    <h2 style="margin-top:16px">Link two devices</h2>
+    <div class="row">
+      <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
+      <button class="secondary" onclick="addLink()">Link</button>
+    </div>
+  </section>
+
+</main>
+
+<script>
+// Small helpers to call our API
+const post = (url, body) => fetch(url, {method: "POST", headers: {"Content-Type": "application/json"},
+                                         body: JSON.stringify(body || {})}).then(r => r.json());
+const get = url => fetch(url).then(r => r.json());
+const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
+const show = data => document.getElementById("msg").innerHTML = "<pre>" + esc(JSON.stringify(data, null, 2)) + "</pre>";
+
+// ---------- 1. intent -> plan ----------
+async function sendIntent() {
+  const box = document.getElementById("plan");
+  box.innerHTML = "Thinking...";
+  const plan = await post("/api/intent", {text: document.getElementById("intent").value});
+  if (plan.error) { box.innerHTML = `<p class="error">${esc(plan.error)}</p>`; return; }
+
+  let html = `<p><b>Plan:</b> ${esc(plan.summary)}</p>`;
+  for (const c of plan.changes) {
+    html += `<p><b>${esc(c.device)}</b></p><pre>${esc(c.commands.join("\n"))}</pre>
+             <details><summary>Rollback (undo) commands</summary><pre>${esc(c.rollback.join("\n"))}</pre></details>`;
+  }
+  const v = plan.validation;
+  html += v.errors.map(e => `<p class="error">&#10007; ${esc(e)}</p>`).join("");
+  html += v.warnings.map(w => `<p class="warn">&#9888; ${esc(w)}</p>`).join("");
+  if (v.ok) {
+    html += `<p class="ok">&#10003; Validation passed</p>
+             <button onclick="approve('${plan.id}')">Approve &amp; apply</button>`;
+  }
+  box.innerHTML = html;
+}
+
+async function approve(id) {
+  const box = document.getElementById("plan");
+  box.innerHTML += "<p>Applying...</p>";
+  const r = await post("/api/approve/" + id);
+  let html = `<h3 class="${r.success ? "ok" : "error"}">${r.success ? "Done!" : "Failed"} ${esc(r.error || "")}</h3>`;
+  for (const x of r.results) html += `<p><b>${esc(x.device)}</b>: ${esc(x.status)}</p><pre>${esc(x.output)}</pre>`;
+  box.innerHTML = html;
+  load();
+}
+
+// ---------- devices + topology ----------
+let network;
+async function load() {
+  const t = await get("/api/topology");
+
+  let rows = "<tr><th>Name</th><th>IP</th><th>Vendor</th><th>State</th><th></th></tr>";
+  for (const d of t.devices) {
+    rows += `<tr><td>${esc(d.name)}</td><td>${esc(d.ip)}</td><td>${esc(d.vendor)}</td>
+      <td class="${esc(d.state)}">${esc(d.state || "?")}</td>
+      <td><button class="secondary" onclick="history_('${esc(d.name)}')">History</button>
+          <button class="secondary" onclick="edit('${esc(d.name)}')">Edit</button>
+          <button class="danger" onclick="del('${esc(d.name)}')">X</button></td></tr>`;
+  }
+  document.getElementById("devices").innerHTML = rows;
+  window.devices = t.devices;
+
+  const nodes = t.devices.map(d => ({id: d.name, label: d.name + "\n" + (d.ip || ""), shape: "box",
+                                    color: d.state === "down" ? "#f5b7b1" : "#a9dfbf"}));
+  const edges = t.links.map(l => ({from: l.a, to: l.b}));
+  if (window.vis) network = new vis.Network(document.getElementById("graph"), {nodes, edges}, {});
+}
+
+function edit(name) {
+  const d = window.devices.find(x => x.name === name);
+  for (const k of ["name", "ip", "vendor", "protocol", "url"]) document.getElementById("d-" + k).value = d[k] || "";
+}
+async function addDevice() {
+  const d = {};
+  for (const k of ["name", "ip", "vendor", "protocol", "url"]) d[k] = document.getElementById("d-" + k).value;
+  show(await post("/api/devices", d)); load();
+}
+async function addLink() {
+  show(await post("/api/links", {a: document.getElementById("l-a").value, b: document.getElementById("l-b").value}));
+  load();
+}
+async function del(name) {
+  if (confirm("Delete " + name + "?")) { await fetch("/api/devices/" + name, {method: "DELETE"}); load(); }
+}
+async function history_(name) { show(await get("/api/devices/" + name + "/history")); }
+async function discover() {
+  document.getElementById("msg").innerHTML = "Scanning... (can take a minute)";
+  show(await post("/api/discover", {subnet: document.getElementById("subnet").value})); load();
+}
+
+load();
+</script>
+</body>
+</html>
