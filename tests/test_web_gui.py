@@ -62,7 +62,7 @@ def ai(monkeypatch):
     monkeypatch.setattr(settings, "SHOW_BROWSER", False)
     scripted = ScriptedAI()
     monkeypatch.setattr(ibn.intent, "get_llm", lambda: scripted)
-    STATE.update(ssid="Orange-1234", logged_in=False)
+    STATE.update(ssid="Orange-1234", wifi_password="wifi-pass-123", logged_in=False)
     try:
         get_driver(DEVICE).__enter__().disconnect()
     except Exception as e:
@@ -75,6 +75,9 @@ def test_change_wifi_name(ai):
     with get_driver(DEVICE) as driver:
         driver.send_config(["Change the Wi-Fi network name (SSID) to Home5G"])
     assert STATE["ssid"] == "Home5G"
+    assert "Username" not in ai.prompts[0]  # logged in without the AI
+    # the Wi-Fi page also has a password box: the router password must NOT be typed into it
+    assert STATE["wifi_password"] == "wifi-pass-123"
     assert not any("S3cret!" in p for p in ai.prompts)  # the AI never sees the password
 
 
@@ -83,3 +86,10 @@ def test_read_only_task_reads_without_changing(ai):
         output = driver.run_commands(["Read the current Wi-Fi network name"])
     assert output.endswith("Orange-1234")
     assert STATE["ssid"] == "Orange-1234"
+
+
+def test_wrong_password_gives_a_clear_error(ai):
+    with pytest.raises(RuntimeError, match="Login failed"):
+        with get_driver({**DEVICE, "password": "wrong"}):
+            pass
+    assert ai.prompts == []  # logging in never needs the AI

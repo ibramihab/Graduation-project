@@ -1,7 +1,8 @@
 """Home routers that only have a web page (no CLI): a small "browser agent".
 
 How it works (works on almost any router brand, no per-router code):
-  1. open the router's page in a real browser (Playwright), so JavaScript works
+  1. open the router's page in a real browser (Playwright), so JavaScript works,
+     and log in (simple rules, no AI needed: find the password box, fill, click Login)
   2. list everything on the page you can type into or click, and number it:
         [3] <input type=text id=Frm_Username> label="Username" value=""
         [7] <button> "Login"
@@ -14,13 +15,17 @@ The AI never sees the router password: it writes "{password}" and we put in the 
 Set SHOW_BROWSER=true in .env to watch it work in a browser window.
 """
 import re
+import time
 
 from playwright.sync_api import sync_playwright
 
 from ... import settings
 from .base import Driver
 
-MAX_STEPS = 30  # give up after this many actions
+MAX_STEPS = 15      # give up after this many AI actions
+TIME_LIMIT = 300    # ...or after 5 minutes (a local AI on a laptop is slow)
+MAX_ELEMENTS = 80   # fewer elements = smaller, faster AI requests
+MAX_TEXT = 800      # characters of page text shown to the AI
 
 ACTION_SCHEMA = {
     "type": "object",
@@ -45,8 +50,8 @@ and a numbered list of ELEMENTS you can use). Reply with ONE next action:
 - "fail":   the task is impossible; explain why in "answer"
 
 Rules:
-- On a login page, log in first: fill the username box with {username} and the
-  password box with {password} (write these placeholders exactly), then click Login.
+- You are already logged in. If you still see a login page, fill the username box with
+  {username} and the password box with {password} (write these placeholders exactly).
 - Find settings through the menus. Wi-Fi settings are usually under names like
   "Local Network", "WLAN", "Wireless", "Wi-Fi", then a sub-menu like "WLAN Basic" or
   "SSID Settings". Click menus and sub-menus until you see the right fields.
@@ -59,8 +64,7 @@ Rules:
 """
 
 READ_ONLY_RULES = """
-THIS IS A READ-ONLY TASK: you may log in, then only click menus, sub-menus and tabs to
-find the information. Never type anything else, never select, never click
+THIS IS A READ-ONLY TASK: only click menus, sub-menus and tabs to find the information. Never type anything else, never select, never click
 Apply/Save/Reboot. Put the information in "answer".
 """
 
@@ -142,6 +146,8 @@ class WebGuiDriver(Driver):
         self.page.on("dialog", lambda d: d.dismiss() if self.read_only else d.accept())
         self.page.goto(self.url, timeout=20000)
         self._settle()
+        self.logins = 0
+        self._login_if_needed()
 
     def disconnect(self):
         if getattr(self, "browser", None):
@@ -164,12 +170,19 @@ class WebGuiDriver(Driver):
         system = SYSTEM_PROMPT + (READ_ONLY_RULES if read_only else "")
         history = []  # what we did, shown to the AI every turn
         tried = []    # (action, element, value), to notice when the AI is stuck
+        started = time.monotonic()
+        self._log(f"task: {task}")
         for step in range(1, MAX_STEPS + 1):
-            elements = self._list_elements()
+            if time.monotonic() - started > TIME_LIMIT:
+                raise RuntimeError(f"Stopped after {TIME_LIMIT // 60} minutes. Steps:\n" + "\n".join(history))
+            self._login_if_needed()  # the router may have logged us out
+            elements = self._list_elements()[:MAX_ELEMENTS]
             user = (f"TASK:\n{task}\n\nDONE SO FAR:\n" + ("\n".join(history) or "(nothing yet)") +
                     f"\n\nPAGE {self.page.url}:\n{self._page_text()}\n\nELEMENTS:\n" + "\n".join(elements))
+            self._log(f"step {step}: asking the AI ({len(elements)} elements on the page)...")
             answer = self.llm.ask_json(system, user, ACTION_SCHEMA)
             action, number, value = answer["action"], answer.get("element", -1), answer.get("value", "")
+            self._log(f"step {step}: AI says {action} [{number}] {value!r} - {answer.get('reason', '')}")
 
             if action == "done":
                 return "\n".join(history + [f"DONE: {answer.get('answer', '')}"])
@@ -226,7 +239,7 @@ class WebGuiDriver(Driver):
                 texts.append(frame.evaluate("document.body ? document.body.innerText : ''")[:1000])
             except Exception:
                 pass
-        return re.sub(r"\n\s*\n+", "\n", "\n".join(texts)).strip()[:2000]
+        return re.sub(r"\n\s*\n+", "\n", "\n".join(texts)).strip()[:MAX_TEXT]
 
     def _allowed_read_only(self, action: str, value: str, element) -> bool:
         """Read-only tasks may log in (type only the login placeholders) and click
@@ -238,10 +251,62 @@ class WebGuiDriver(Driver):
             return not CHANGING_WORDS.search(text)
         return False
 
+    def _credentials(self) -> tuple[str, str]:
+        return (self.device.get("username") or settings.DEVICE_USERNAME,
+                self.device.get("password") or settings.DEVICE_PASSWORD)
+
     def _secret(self, value: str) -> str:
-        username = self.device.get("username") or settings.DEVICE_USERNAME
-        password = self.device.get("password") or settings.DEVICE_PASSWORD
+        username, password = self._credentials()
         return value.replace("{username}", username).replace("{password}", password)
+
+    # ---- login without the AI ----
+    LOGIN_WORDS = re.compile(r"log\s?in|sign\s?in", re.I)
+
+    def _login_form(self):
+        """(frame, login button) if the page is a login page, else None.
+        A login page = a password box + very few other boxes + a "Login"/"Sign in" button.
+        (A Wi-Fi settings page also has a password box, but no Login button.
+        That check matters: we must never type the router password into a Wi-Fi password box.)"""
+        for frame in self.page.frames:
+            try:
+                if not frame.locator("input[type=password]:visible").count():
+                    continue
+                boxes = frame.locator("input:visible:not([type=hidden]):not([type=button])"
+                                      ":not([type=submit]):not([type=checkbox]):not([type=radio])").count()
+                if boxes > 3:
+                    continue
+                for button in frame.locator("button:visible, input[type=submit]:visible, input[type=button]:visible, "
+                                            "a:visible, [id*=login i]:visible").all()[:40]:
+                    label = button.inner_text() or button.get_attribute("value") or button.get_attribute("id") or ""
+                    if self.LOGIN_WORDS.search(label):
+                        return frame, button
+            except Exception:
+                pass  # frame still loading or gone
+        return None
+
+    def _login_if_needed(self):
+        form = self._login_form()
+        if not form:
+            return
+        if self.logins >= 2:
+            raise RuntimeError("Login failed: check the router's username and password "
+                               "(Edit the device in the web page and save them again).")
+        self.logins += 1
+        self._log("login page found: logging in (no AI needed)")
+        frame, button = form
+        username, password = self._credentials()
+        user_box = frame.locator("input[type=text]:visible, input[type=email]:visible, input:not([type]):visible")
+        if user_box.count():
+            user_box.first.fill(username)
+        frame.locator("input[type=password]:visible").first.fill(password)
+        button.click(timeout=5000)
+        self._settle()
+        self.page.wait_for_timeout(1500)  # some routers need a moment after login
+        self._login_if_needed()  # still on the login page? try once more, then give up clearly
+
+    def _log(self, message: str):
+        # shows up in the black start.bat window, so you can follow what happens
+        print(f"[{self.device['name']}] {message}", flush=True)
 
     def _settle(self):
         """Wait until the page has finished loading after an action."""
