@@ -1,7 +1,14 @@
 @echo off
 REM Double-click this file to get the newest version of the project from GitHub.
 REM Your .env settings and data\ folder (your devices) are NOT touched.
-cd /d "%~dp0"
+
+REM Windows reads a .bat file line by line WHILE it runs. "git pull" may replace this
+REM file, so we first copy it to a temporary file and run that copy instead.
+if not "%~1"=="--copy" (
+    copy /y "%~f0" "%TEMP%\ibn_update.bat" >nul
+    "%TEMP%\ibn_update.bat" --copy "%~dp0."
+)
+cd /d "%~2"
 
 for /f %%i in ('git rev-parse HEAD') do set BEFORE=%%i
 git pull -q
