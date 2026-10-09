@@ -8,12 +8,12 @@ The system turns it into device commands, checks they are safe, shows them to
 you, and when you click **Approve** it logs in to the device and applies them.
 If something fails, it undoes the change automatically.
 
-The project is deliberately small (about 1000 lines of Python) so you can read
+The project is deliberately small (about 25 short files, ~2,000 lines) so you can read
 all of it. Every layer is one folder, and every "kind of thing" (LLM, vendor,
 database) can be swapped or extended without touching the other layers.
 
-
 📘 **New to the code?** Read [`docs/PROJECT_GUIDE.md`](docs/PROJECT_GUIDE.md): how it works, every file explained, and how to grow it.
+
 ---
 
 ## 1. The layers
