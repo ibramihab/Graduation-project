@@ -1,0 +1,228 @@
+VPN lab config + management (e0/3 to Cloud0) + SSH for the IBN program
+=======================================================================
+Login for the program: username admin / password admin  (same as .env)
+Management IPs: R1 .201, R2 .202, R3 .203, SW1 .211, SW3 .213  (mask /24)
+
+IMPORTANT: 192.168.1.x must be the SAME subnet as your EVE-NG VM's IP.
+If EVE-NG is e.g. 192.168.80.128, use 192.168.80.201, .202 ... instead.
+
+
+R1
+--
+en
+conf t
+hostname R1
+
+int e0/0
+ip address 10.1.2.1 255.255.255.0
+no sh
+duplex full
+
+int e0/2
+ip address 10.0.1.1 255.255.255.0
+no sh
+duplex full
+
+router ospf 1
+router-id 1.1.1.1
+network 10.1.2.0 0.0.0.255 area 0
+network 10.0.1.0 0.0.0.255 area 0
+
+int tunnel 1
+ip address 10.1.3.1 255.255.255.0
+tunnel source e0/0
+tunnel destination 10.2.3.3
+
+ip route 10.0.3.0 255.255.255.0 tunnel1 10.1.3.3
+
+! ----- management + SSH -----
+int e0/3
+ip address 192.168.1.201 255.255.255.0
+no cdp enable
+no sh
+duplex full
+
+ip domain-name lab.local
+username admin privilege 15 secret admin
+crypto key generate rsa modulus 2048
+ip ssh version 2
+
+line vty 0 4
+login local
+transport input ssh telnet
+
+end
+write memory
+
+
+R2
+--
+en
+conf t
+hostname R2
+
+int e0/1
+ip address 10.2.3.2 255.255.255.0
+no sh
+duplex full
+
+int e0/0
+ip address 10.1.2.2 255.255.255.0
+no sh
+duplex full
+
+router ospf 1
+router-id 2.2.2.2
+network 10.1.2.0 0.0.0.255 area 0
+network 10.2.3.0 0.0.0.255 area 0
+
+! ----- management + SSH -----
+int e0/3
+ip address 192.168.1.202 255.255.255.0
+no cdp enable
+no sh
+duplex full
+
+ip domain-name lab.local
+username admin privilege 15 secret admin
+crypto key generate rsa modulus 2048
+ip ssh version 2
+
+line vty 0 4
+login local
+transport input ssh telnet
+
+end
+write memory
+
+
+R3
+--
+en
+conf t
+hostname R3
+
+int e0/1
+ip address 10.2.3.3 255.255.255.0
+no sh
+duplex full
+
+int e0/2
+ip address 10.0.3.3 255.255.255.0
+no sh
+duplex full
+
+router ospf 1
+router-id 3.3.3.3
+network 10.2.3.0 0.0.0.255 area 0
+network 10.0.3.0 0.0.0.255 area 0
+
+int tunnel 1
+ip address 10.1.3.3 255.255.255.0
+tunnel source e0/1
+tunnel destination 10.1.2.1
+
+ip route 10.0.1.0 255.255.255.0 tunnel1 10.1.3.1
+
+! ----- management + SSH -----
+int e0/3
+ip address 192.168.1.203 255.255.255.0
+no cdp enable
+no sh
+duplex full
+
+ip domain-name lab.local
+username admin privilege 15 secret admin
+crypto key generate rsa modulus 2048
+ip ssh version 2
+
+line vty 0 4
+login local
+transport input ssh telnet
+
+end
+write memory
+
+
+SW1
+---
+en
+conf t
+hostname SW1
+
+int e0/2
+duplex full
+
+! ----- management + SSH -----
+int e0/3
+no switchport
+ip address 192.168.1.211 255.255.255.0
+no cdp enable
+no sh
+duplex full
+
+ip domain-name lab.local
+username admin privilege 15 secret admin
+crypto key generate rsa modulus 2048
+ip ssh version 2
+
+line vty 0 4
+login local
+transport input ssh telnet
+
+end
+write memory
+
+
+SW3   (was "SW2" in the old file; named SW3 to match the drawing)
+---
+en
+conf t
+hostname SW3
+
+int e0/2
+duplex full
+
+! ----- management + SSH -----
+int e0/3
+no switchport
+ip address 192.168.1.213 255.255.255.0
+no cdp enable
+no sh
+duplex full
+
+ip domain-name lab.local
+username admin privilege 15 secret admin
+crypto key generate rsa modulus 2048
+ip ssh version 2
+
+line vty 0 4
+login local
+transport input ssh telnet
+
+end
+write memory
+
+
+VPC4
+----
+ip 10.0.1.10 24 10.0.1.1
+save
+
+
+VPC5
+----
+ip 10.0.3.10 24 10.0.3.3
+save
+
+
+Checks after pasting (on each device)
+-------------------------------------
+show ip interface brief      -> e0/3 is up/up with the 192.168.1.x address
+show ip ssh                  -> "SSH Enabled - version 2.0"
+ping 192.168.1.202           -> devices can reach each other on management
+show ip ospf neighbor        -> OSPF still works (management is NOT in OSPF)
+
+From Windows PowerShell:
+ping 192.168.1.201
+ssh admin@192.168.1.201
