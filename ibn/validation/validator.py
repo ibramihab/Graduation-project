@@ -10,6 +10,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      "config" steps don't contain them (they only work outside config mode)
   7. physical interfaces in the commands (Ethernet0/0, Gi0/1...) really exist
      on the device (we know them from "Find links & IPs")
+  8. a risky change (shutdown, ACL...) on a device that is a single point of failure
+     gets an extra warning saying which parts of the network would be cut off
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -19,14 +21,15 @@ check for IP conflicts using the knowledge base, ask a second LLM to review.
 """
 import re
 
+from ..infrastructure.drivers import DRIVERS
+from ..knowledge.graph_analysis import impact
+from .rules import BLOCKED, CHECK_ALLOWED, WARN
+
 # A physical interface written in a command: "Ethernet0/0", "Gi0/1", "fa 0/2", "Serial0/0/0".
 # Needs a "/" in the number, so it never matches Loopback5, Tunnel1, Vlan10 or IP addresses.
 PHYSICAL_INTERFACE = re.compile(
     r"\b(ethernet|fastethernet|gigabitethernet|tengigabitethernet|serial|eth|et|e|fa|f|"
     r"gig|gi|g|te|se|s)\s?(\d+(?:/\d+)+)", re.IGNORECASE)
-
-from ..infrastructure.drivers import DRIVERS
-from .rules import BLOCKED, CHECK_ALLOWED, WARN
 
 
 def validate(plan: dict, kb) -> dict:
@@ -69,10 +72,18 @@ def validate(plan: dict, kb) -> dict:
                 if re.search(pattern, command.strip().lower()):
                     errors.append(f"{name}: '{command}' is blocked ({reason})")
         # Warnings only for the real commands (a rollback is SUPPOSED to remove things).
+        risky = False
         for command in change.get("commands", []):
             for pattern, reason in WARN:
                 if re.search(pattern, command.strip().lower()):
                     warnings.append(f"{name}: '{command}' {reason}")
+                    risky = True
+        # Risky change on a single point of failure? Say what would be cut off.
+        if risky:
+            groups = impact(kb, name)
+            if groups:
+                warnings.append(f"{name} is a single point of failure: if this change breaks it, "
+                                "the network splits into " + "  |  ".join(", ".join(g) for g in groups))
 
         # Interface names must exist on the device (if we know its interfaces).
         known = [i.split()[0] for i in device.get("interfaces") or []]

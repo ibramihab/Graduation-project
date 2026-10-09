@@ -105,18 +105,22 @@ Request: "stop the network 10.0.1.0/24 from reaching R2"   (R2 receives it on Et
 
 Devices:
 {devices}
+
+Links (cables between devices):
+{links}
 """
 
 # Lines the control layer adds by itself, so we remove them if the LLM adds them anyway.
 WRAPPER_LINES = {"configure terminal", "conf t", "end", "write memory", "wr"}
 
 
-def translate(text: str, devices: list[dict], llm) -> dict:
+def translate(text: str, devices: list[dict], llm, links: list[dict] = ()) -> dict:
     # Only send the LLM what it needs (never passwords).
     fields = ("name", "ip", "vendor", "state", "interfaces")
     visible = [{k: d[k] for k in fields if d.get(k)} for d in devices]
     # .replace (not .format) because the examples above contain { } braces
     system = SYSTEM_PROMPT.replace("{devices}", json.dumps(visible, indent=2))
+    system = system.replace("{links}", "\n".join(f"{l['a']} - {l['b']}" for l in links) or "(unknown)")
     plan = llm.ask_json(system, text, PLAN_SCHEMA)
 
     for change in plan["changes"]:

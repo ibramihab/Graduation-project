@@ -7,7 +7,7 @@ from flask import Flask, jsonify, render_template, request
 from .. import pipeline
 from ..infrastructure import discovery
 from ..intent import get_llm
-from ..knowledge import get_knowledge_base
+from ..knowledge import get_knowledge_base, graph_analysis
 
 
 def create_app(kb=None, llm=None) -> Flask:
@@ -54,6 +54,21 @@ def create_app(kb=None, llm=None) -> Flask:
     @app.get("/api/devices/<name>/history")
     def history(name):
         return jsonify(kb.get_history(name))
+
+    # ---- graph questions (NetworkX) ----
+    @app.get("/api/graph/path")
+    def graph_path():
+        a, b = request.args["a"], request.args["b"]
+        return jsonify({"path": graph_analysis.path(kb, a, b),
+                        "independent_paths": graph_analysis.independent_paths(kb, a, b)})
+
+    @app.get("/api/graph/impact/<name>")
+    def graph_impact(name):
+        return jsonify({"groups": graph_analysis.impact(kb, name)})
+
+    @app.get("/api/graph/critical")
+    def graph_critical():
+        return jsonify({"critical": graph_analysis.critical_devices(kb)})
 
     # ---- discovery ----
     @app.post("/api/discover")

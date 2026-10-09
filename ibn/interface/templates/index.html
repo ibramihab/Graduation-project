@@ -48,6 +48,16 @@
     </div>
     <button class="secondary" onclick="post('/api/discover-links').then(r => { show(r); load(); })">Find links &amp; IPs (CDP)</button>
     <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
+    <h2 style="margin-top:16px">Ask the network graph</h2>
+    <div class="row">
+      <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
+      <button class="secondary" onclick="findPath()">Path</button>
+    </div>
+    <div class="row">
+      <input id="g-dev" placeholder="Device (R2)">
+      <button class="secondary" onclick="whatIfDown()">What if it goes down?</button>
+    </div>
+    <button class="secondary" onclick="criticalDevices()">Critical devices</button>
     <div id="msg"></div>
   </section>
 
@@ -130,7 +140,7 @@ async function approve(id) {
 }
 
 // ---------- devices + topology ----------
-let network;
+let network, nodesData;
 async function load() {
   const t = await get("/api/topology");
 
@@ -146,9 +156,47 @@ async function load() {
   window.devices = t.devices;
 
   const nodes = t.devices.map(d => ({id: d.name, label: d.name + "\n" + (d.ip || ""), shape: "box",
-                                    color: d.state === "down" ? "#f5b7b1" : "#a9dfbf"}));
+                                    color: nodeColor(d)}));
   const edges = t.links.map(l => ({from: l.a, to: l.b}));
-  if (window.vis) network = new vis.Network(document.getElementById("graph"), {nodes, edges}, {});
+  if (!window.vis) return;
+  nodesData = new vis.DataSet(nodes);
+  network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges}, {});
+}
+const nodeColor = d => d.state === "down" ? "#f5b7b1" : "#a9dfbf";
+
+// ---------- graph questions (answered by NetworkX on the server) ----------
+function highlight(groups) {  // groups = [[names], [names]...], each group gets a color
+  const colors = ["#f9e79f", "#aed6f1", "#d7bde2", "#f5cba7"];
+  if (!nodesData) return;
+  nodesData.update(window.devices.map(d => ({id: d.name, color: nodeColor(d)})));  // reset
+  groups.forEach((g, i) => nodesData.update(g.map(n => ({id: n, color: colors[i % colors.length]}))));
+}
+const say = html => document.getElementById("msg").innerHTML = "<p>" + html + "</p>";
+
+async function findPath() {
+  const a = document.getElementById("g-a").value, b = document.getElementById("g-b").value;
+  const r = await get(`/api/graph/path?a=${encodeURIComponent(a)}&b=${encodeURIComponent(b)}`);
+  if (!r.path.length) { highlight([]); return say(`No path between <b>${esc(a)}</b> and <b>${esc(b)}</b>.`); }
+  highlight([r.path]);
+  say(`Path: <b>${r.path.map(esc).join(" → ")}</b><br>` + (r.independent_paths >= 2
+      ? `<span class="ok">${r.independent_paths} separate paths: there is a backup if one link fails.</span>`
+      : `<span class="warn">Only 1 path: if one link on it fails, they lose connection.</span>`));
+}
+async function whatIfDown() {
+  const name = document.getElementById("g-dev").value;
+  const r = await get("/api/graph/impact/" + encodeURIComponent(name));
+  highlight(r.groups);
+  say(r.groups.length
+      ? `<span class="warn">If <b>${esc(name)}</b> goes down, the network splits into ${r.groups.length} parts that can't reach each other:</span><br>`
+        + r.groups.map(g => g.map(esc).join(", ")).join("<br>")
+      : `<span class="ok">If <b>${esc(name)}</b> goes down, all the other devices can still reach each other.</span>`);
+}
+async function criticalDevices() {
+  const r = await get("/api/graph/critical");
+  highlight([r.critical]);
+  say(r.critical.length
+      ? `<span class="warn">Single points of failure (if one goes down, the network splits): <b>${r.critical.map(esc).join(", ")}</b></span>`
+      : `<span class="ok">No single point of failure: every device has a backup path.</span>`);
 }
 
 function edit(name) {

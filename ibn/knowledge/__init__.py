@@ -1,5 +1,6 @@
 """Shared component: the Knowledge Base (the system's memory of the network)."""
 from .. import settings
+from . import graph_analysis
 from .base import KnowledgeBase
 
 

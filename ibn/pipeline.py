@@ -19,7 +19,7 @@ def propose(text: str, kb, llm) -> dict:
     """Steps 1-3: understand the request and check it. Nothing is changed yet."""
     request = text
     for attempt in range(1, ATTEMPTS + 1):
-        plan = translate(request, kb.list_devices(), llm)
+        plan = translate(request, kb.list_devices(), llm, kb.list_links())
         plan["validation"] = validate(plan, kb)
         if plan["validation"]["ok"] or not plan["changes"]:
             break

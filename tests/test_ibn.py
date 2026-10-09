@@ -8,6 +8,7 @@ import pytest
 from ibn import pipeline
 from ibn.infrastructure.drivers.simulated import FAKE_CONFIGS
 from ibn.interface.web import create_app
+from ibn.knowledge import graph_analysis
 from ibn.knowledge.file_graph import FileGraph
 from ibn.validation import validate
 
@@ -177,3 +178,41 @@ def test_web_api(kb):
 
     plan = client.post("/api/intent", json={"text": "vlan 20 on SW1"}).json
     assert client.post(f"/api/approve/{plan['id']}").json["success"]
+
+
+def build_lab(kb):
+    """Your EVE-NG lab: SW1 - R1 - R2 - R3 - SW3 (R1 and SW1 already exist)."""
+    for name in ("R2", "R3", "SW3"):
+        kb.add_device({"name": name, "ip": "10.0.0.9", "vendor": "simulated", "state": "up"})
+    for a, b in (("R1", "R2"), ("R2", "R3"), ("R3", "SW3")):
+        kb.add_link(a, b)
+
+
+def test_graph_questions(kb):
+    build_lab(kb)
+    assert graph_analysis.path(kb, "SW1", "SW3") == ["SW1", "R1", "R2", "R3", "SW3"]
+    assert graph_analysis.independent_paths(kb, "SW1", "SW3") == 1
+    assert graph_analysis.impact(kb, "R2") == [["R1", "SW1"], ["R3", "SW3"]]
+    assert graph_analysis.impact(kb, "SW3") == []  # an edge device cuts nobody off
+    assert graph_analysis.critical_devices(kb) == ["R1", "R2", "R3"]
+    assert graph_analysis.path(kb, "SW1", "NOPE") == []
+
+    kb.add_link("R1", "R3")  # like the tunnel: now there is a backup path around R2
+    assert graph_analysis.independent_paths(kb, "R1", "R3") == 2
+    assert graph_analysis.impact(kb, "R2") == []
+    assert "R2" not in graph_analysis.critical_devices(kb)
+
+
+def test_risky_change_on_critical_device_warns_what_would_break(kb):
+    build_lab(kb)
+    plan = {"changes": [change("R2", ["interface e0/1", "shutdown"], ["interface e0/1", "no shutdown"])]}
+    warnings = " ".join(validate(plan, kb)["warnings"])
+    assert "single point of failure" in warnings and "R3, SW3" in warnings
+
+
+def test_graph_api(kb):
+    build_lab(kb)
+    client = create_app(kb, FakeLLM({})).test_client()
+    assert client.get("/api/graph/path?a=SW1&b=SW3").json["path"][2] == "R2"
+    assert client.get("/api/graph/impact/R2").json["groups"] == [["R1", "SW1"], ["R3", "SW3"]]
+    assert client.get("/api/graph/critical").json["critical"] == ["R1", "R2", "R3"]

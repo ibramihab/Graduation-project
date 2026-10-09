@@ -147,7 +147,8 @@ Graduation-project/
 │       ├── __init__.py            [CORE]     picks file or Neo4j storage
 │       ├── base.py                [CORE]     the rules every storage must follow
 │       ├── file_graph.py          [CORE*]    graph stored in data/knowledge.json
-│       └── neo4j_graph.py         [CORE*]    graph stored in Neo4j        (*you need one of the two)
+│       ├── neo4j_graph.py         [CORE*]    graph stored in Neo4j        (*you need one of the two)
+│       └── graph_analysis.py      [OPTIONAL] graph questions: path, what-if, critical devices
 │
 ├── tests/                         [SUPPORT]  automatic tests (run: pytest)
 │   └── test_ibn.py                           tests for the whole pipeline
@@ -187,6 +188,7 @@ the `venv`, installs libraries (first time only), then runs `run.py`.
 | `anthropic` | Claude AI (`llm.py`) | only if you use Claude |
 | `requests` | Ollama AI (`llm.py`) | only if you use Ollama |
 | `neo4j` | Neo4j storage | only if `KB_BACKEND=neo4j` |
+| `networkx` | graph questions (`graph_analysis.py`) | yes (installed automatically) |
 | `netmiko` | SSH/Telnet to devices | yes (for real devices) |
 | `paramiko<4` | SSH library under Netmiko; pinned because version 4+ can't talk to older Cisco IOS | yes |
 | `python-dotenv` | reads `.env` | yes |
@@ -451,7 +453,7 @@ These two folder names are a **Flask convention** (Flask looks for exactly these
 | History (Change) | time, request, commands, success, device output | control layer, after every plan | the History button |
 | `username`/`password` (optional) | per-device login | you (Save device) | drivers only, **never** sent to the AI or shown on the page |
 
-**The 4 files in `ibn/knowledge/`:**
+**The 5 files in `ibn/knowledge/`:**
 
 **1. `base.py`: the contract (the rules).** Lists the functions every storage must have,
 without real code: `add_device` (add, or update if the name exists), `get_device` /
@@ -501,11 +503,30 @@ to SW3?", "which devices depend on R2?").
 
 | | JSON file (`file`) | Neo4j (`neo4j`) |
 |---|---|---|
-| Setup | none | Docker + `docker compose up -d` |
+| Setup | none | Neo4j Desktop, or Docker + `docker compose up -d` |
 | See it | open `data/knowledge.json` | graph picture at localhost:7474 |
-| Best for | learning, testing, small labs | presentation, big networks, graph questions |
+| Best for | everyday use, no installation | presentation (graph picture), very big networks, sharing one database in a team |
 
 Switching is one line in `.env`, but you add your devices again: the two storages don't share data.
+
+**Users don't have to install Neo4j.** The JSON file is the default and needs nothing.
+Graph questions (below) work with both storages.
+
+**5. `graph_analysis.py`: graph questions (NetworkX).** Reads the devices and links from
+whichever storage is active, builds the graph in memory with the **NetworkX** library
+(installed automatically, nothing for users to install), and answers:
+
+| Function | Question | Example answer (your lab) |
+|---|---|---|
+| `path(kb, "SW1", "SW3")` | how does traffic get from A to B? | `SW1 → R1 → R2 → R3 → SW3` |
+| `independent_paths(kb, a, b)` | is there a backup path? (paths that share no link) | `1` = no backup, `2+` = backup |
+| `impact(kb, "R2")` | what breaks if this device goes down? | splits into `R1, SW1` and `R3, SW3` |
+| `critical_devices(kb)` | which devices are single points of failure? | `R1, R2, R3` |
+
+Used by: the **"Ask the network graph"** box on the web page (colors the answer on the
+topology picture), **validation** (a risky change like `shutdown` or an ACL on a critical
+device gets a warning saying which parts of the network would be cut off), and the **AI**
+also receives the list of links so it knows how devices are connected.
 
 ---
 
@@ -612,6 +633,10 @@ that calls the same API URLs (Part 3, Layer 1 table). Python stays the same.
 2. One call in `pipeline.approve()` after `apply_plan`.
 3. Show the result in `index.html`.
 That's the pattern for any new layer: **new folder + one call in `pipeline.py`**.
+
+### Ask more graph questions
+Add a function to `knowledge/graph_analysis.py` (NetworkX has hundreds: shortest paths,
+loops, distances...), one URL in `web.py`, one button in `index.html`.
 
 ### Store more in the knowledge base (VLANs, routes, interfaces as graph nodes)
 Add methods to `knowledge/base.py`, implement them in both storages, fill them from

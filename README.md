@@ -117,7 +117,7 @@ There are two storage options with the **same** methods (`knowledge/base.py`):
 | `file` (default) | `knowledge/file_graph.py` | Learning. Nothing to install. Saves to `data/knowledge.json`. |
 | `neo4j` | `knowledge/neo4j_graph.py` | The real graph database. |
 
-To use Neo4j (needs [Docker](https://docs.docker.com/get-docker/)):
+To use Neo4j: install [Neo4j Desktop](https://neo4j.com/download) (no Docker needed, create a local database with password `password123`), or with Docker:
 
 ```bash
 docker compose up -d                # starts Neo4j
@@ -130,6 +130,23 @@ Open http://localhost:7474 (user `neo4j`, password `password123`) and run
 
 `TEST_NEO4J=1 pytest` also runs all the tests against Neo4j. **Warning:** it
 deletes all devices in that Neo4j, so only use it on an empty test database.
+
+**Neo4j is optional.** Users don't need to install it: the default JSON file works
+everywhere, and the graph questions below work with both storages.
+
+### Ask the network graph (NetworkX, nothing to install)
+
+`knowledge/graph_analysis.py` builds the graph in memory with the NetworkX library.
+On the web page, the **"Ask the network graph"** box answers and colors the result:
+
+| Button | Answer (example) |
+|---|---|
+| **Path** | `SW1 → R1 → R2 → R3 → SW3`, and whether there is a backup path |
+| **What if it goes down?** | "If R2 goes down, the network splits into: R1, SW1 / R3, SW3" |
+| **Critical devices** | single points of failure: R1, R2, R3 |
+
+Validation also uses it: a risky change (shutdown, ACL...) on a critical device gets a
+warning saying which parts of the network would be cut off.
 
 ---
 
