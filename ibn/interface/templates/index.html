@@ -42,6 +42,8 @@
   <section>
     <h2>Network topology</h2>
     <div id="graph"></div>
+    <p style="font-size:13px;margin:4px 0">Drag boxes to arrange them (your layout is remembered). Click a line to select a link.</p>
+    <button id="remove-link" class="danger" style="display:none" onclick="removeLink()"></button>
     <div class="row">
       <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
       <button class="secondary" onclick="discover()">Scan (ping)</button>
@@ -140,7 +142,16 @@ async function approve(id) {
 }
 
 // ---------- devices + topology ----------
-let network, nodesData;
+let network, nodesData, edgesData, selectedLink;
+
+// Where you dragged each box is remembered in this browser, so the picture keeps your layout.
+function savedPositions() {
+  try { return JSON.parse(localStorage.getItem("ibn-positions") || "{}"); } catch (e) { return {}; }
+}
+function savePositions() {
+  try { localStorage.setItem("ibn-positions", JSON.stringify(network.getPositions())); } catch (e) {}
+}
+
 async function load() {
   const t = await get("/api/topology");
 
@@ -154,13 +165,42 @@ async function load() {
   }
   document.getElementById("devices").innerHTML = rows;
   window.devices = t.devices;
-
-  const nodes = t.devices.map(d => ({id: d.name, label: d.name + "\n" + (d.ip || ""), shape: "box",
-                                    color: nodeColor(d)}));
-  const edges = t.links.map(l => ({from: l.a, to: l.b}));
   if (!window.vis) return;
-  nodesData = new vis.DataSet(nodes);
-  network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges}, {});
+
+  // Boxes with a saved position stay there (physics off); new ones are placed automatically.
+  const saved = network ? network.getPositions() : savedPositions();
+  const nodes = t.devices.map(d => ({id: d.name, label: d.name + "\n" + (d.ip || ""), shape: "box",
+                                    color: nodeColor(d), ...(saved[d.name] ? {...saved[d.name], physics: false} : {})}));
+  const edges = t.links.map(l => ({id: l.a + "|" + l.b, from: l.a, to: l.b}));
+
+  if (!network) {  // first time: create the picture
+    nodesData = new vis.DataSet(nodes);
+    edgesData = new vis.DataSet(edges);
+    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData}, {});
+    network.on("dragEnd", savePositions);
+    network.on("stabilized", savePositions);
+    network.on("selectEdge", e => { selectedLink = edgesData.get(e.edges[0]); showLinkButton(); });
+    network.on("deselectEdge", () => { selectedLink = null; showLinkButton(); });
+    return;
+  }
+  // Later: update the existing picture instead of drawing a new one (keeps your layout).
+  const nodeIds = new Set(nodes.map(n => n.id)), edgeIds = new Set(edges.map(e => e.id));
+  nodesData.remove(nodesData.getIds().filter(id => !nodeIds.has(id)));
+  edgesData.remove(edgesData.getIds().filter(id => !edgeIds.has(id)));
+  nodesData.update(nodes);
+  edgesData.update(edges);
+}
+
+function showLinkButton() {
+  const b = document.getElementById("remove-link");
+  b.style.display = selectedLink ? "" : "none";
+  if (selectedLink) b.textContent = `Remove link ${selectedLink.from} — ${selectedLink.to}`;
+}
+async function removeLink() {
+  if (!selectedLink) return;
+  await fetch("/api/links", {method: "DELETE", headers: {"Content-Type": "application/json"},
+                             body: JSON.stringify({a: selectedLink.from, b: selectedLink.to})});
+  selectedLink = null; showLinkButton(); load();
 }
 const nodeColor = d => d.state === "down" ? "#f5b7b1" : "#a9dfbf";
 

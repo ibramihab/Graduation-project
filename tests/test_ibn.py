@@ -58,6 +58,9 @@ def test_knowledge_base_graph(kb):
     assert kb.list_links() == [{"a": "R1", "b": "SW1"}]
     kb.add_link("SW1", "R1")  # same link the other way: no duplicate
     assert len(kb.list_links()) == 1
+    kb.delete_link("SW1", "R1")  # either direction works
+    assert kb.list_links() == []
+    kb.add_link("R1", "SW1")
     assert kb.find_by_ip("10.0.0.2")["name"] == "SW1"
 
 

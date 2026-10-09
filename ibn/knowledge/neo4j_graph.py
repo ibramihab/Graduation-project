@@ -45,6 +45,9 @@ class Neo4jGraph(KnowledgeBase):
         self._run("MATCH (a:Device {name: $a}), (b:Device {name: $b}) "
                   "MERGE (a)-[:CONNECTED_TO]-(b)", a=a, b=b)
 
+    def delete_link(self, a, b):
+        self._run("MATCH (:Device {name: $a})-[r:CONNECTED_TO]-(:Device {name: $b}) DELETE r", a=a, b=b)
+
     def list_links(self):
         # elementId(a) < elementId(b) so each link is returned once, not twice
         return self._run("MATCH (a:Device)-[:CONNECTED_TO]-(b:Device) "

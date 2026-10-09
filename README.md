@@ -134,6 +134,19 @@ deletes all devices in that Neo4j, so only use it on an empty test database.
 **Neo4j is optional.** Users don't need to install it: the default JSON file works
 everywhere, and the graph questions below work with both storages.
 
+### When your network changes
+
+| You changed | Do this |
+|---|---|
+| IPs on data interfaces | **Find links & IPs** (re-reads every device's interfaces) |
+| Added a cable | **Find links & IPs** (CDP finds it) |
+| Removed a cable | click the line in the topology picture → **Remove link** |
+| Added a device | **Save device**, then **Find links & IPs** |
+| Removed a device | **X** next to it |
+| Management IP (e0/3) | **Edit** → change IP → **Save device** |
+
+The topology picture remembers where you dragged each box (saved in your browser).
+
 ### Ask the network graph (NetworkX, nothing to install)
 
 `knowledge/graph_analysis.py` builds the graph in memory with the NetworkX library.

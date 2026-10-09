@@ -51,6 +51,11 @@ def create_app(kb=None, llm=None) -> Flask:
         kb.add_link(request.json["a"], request.json["b"])
         return jsonify({"ok": True})
 
+    @app.delete("/api/links")
+    def delete_link():
+        kb.delete_link(request.json["a"], request.json["b"])
+        return jsonify({"ok": True})
+
     @app.get("/api/devices/<name>/history")
     def history(name):
         return jsonify(kb.get_history(name))

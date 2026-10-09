@@ -59,6 +59,11 @@ class FileGraph(KnowledgeBase):
                 self.data["links"].append([a, b])
                 self._save()
 
+    def delete_link(self, a, b):
+        with self.lock:
+            self.data["links"] = [l for l in self.data["links"] if l not in ([a, b], [b, a])]
+            self._save()
+
     def list_links(self):
         return [{"a": a, "b": b} for a, b in self.data["links"]]
 

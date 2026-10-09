@@ -458,7 +458,7 @@ These two folder names are a **Flask convention** (Flask looks for exactly these
 **1. `base.py`: the contract (the rules).** Lists the functions every storage must have,
 without real code: `add_device` (add, or update if the name exists), `get_device` /
 `list_devices`, `update_device(name, state="down")`, `delete_device` (with its links and
-history), `add_link` / `list_links`, `record_change` / `get_history`, plus helpers
+history), `add_link` / `delete_link` / `list_links`, `record_change` / `get_history`, plus helpers
 `find_by_ip` and `save_backup`. The rest of the program uses **only these names**, which is
 why the storage can be swapped.
 
@@ -527,6 +527,20 @@ Used by: the **"Ask the network graph"** box on the web page (colors the answer 
 topology picture), **validation** (a risky change like `shutdown` or an ACL on a critical
 device gets a warning saying which parts of the network would be cut off), and the **AI**
 also receives the list of links so it knows how devices are connected.
+
+
+### When your network changes
+
+| You changed | Do this |
+|---|---|
+| IPs on data interfaces | **Find links & IPs** (re-reads every device's interfaces) |
+| Added a cable | **Find links & IPs** (CDP finds it) |
+| Removed a cable | click the line in the topology picture → **Remove link** |
+| Added a device | **Save device**, then **Find links & IPs** |
+| Removed a device | **X** next to it |
+| Management IP (e0/3) | **Edit** → change IP → **Save device** |
+
+The topology picture remembers where you dragged each box (saved in your browser).
 
 ---
 

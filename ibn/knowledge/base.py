@@ -39,6 +39,9 @@ class KnowledgeBase(ABC):
     def add_link(self, a: str, b: str) -> None: ...
 
     @abstractmethod
+    def delete_link(self, a: str, b: str) -> None: ...
+
+    @abstractmethod
     def list_links(self) -> list[dict]:
         """Return [{"a": "R1", "b": "SW1"}, ...]"""
 
