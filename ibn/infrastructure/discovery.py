@@ -12,7 +12,7 @@ import socket
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
-from .drivers import get_driver
+from .drivers import DRIVERS, get_driver
 
 PORTS = {22: "ssh", 23: "telnet", 80: "http"}
 
@@ -76,6 +76,8 @@ def discover_links(kb) -> list[str]:
     names = {d["name"] for d in kb.list_devices()}
     errors = []
     for device in kb.list_devices():
+        if device.get("vendor") not in DRIVERS:
+            continue  # e.g. "unknown" devices found by the ping scan: we can't log in
         try:
             with get_driver(device) as driver:
                 for neighbor in driver.get_neighbors():
