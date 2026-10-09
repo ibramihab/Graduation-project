@@ -79,9 +79,8 @@
     </div>
     <div class="row">
       <select id="d-vendor">
-        <option>cisco_ios</option><option>cisco_nxos</option>
-        <option>arista_eos</option><option>huawei</option><option>mikrotik_routeros</option>
-        <option>simulated</option>
+        {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
+        {% endfor %}
       </select>
       <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
     </div>

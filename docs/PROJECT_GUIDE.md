@@ -59,7 +59,7 @@ Example: you type **"Create VLAN 10 named HR on SW1"** and click **Make a plan**
 | 2 | The server calls `pipeline.propose(text)`. | `pipeline.py` |
 | 3 | The translator builds the AI's instructions: rules + examples + **your device list from the knowledge base** (names, vendor, interface IPs, never passwords). | `intent/translator.py`, `knowledge/` |
 | 4 | The AI (Claude or Ollama) answers with a **plan** in a fixed JSON shape (see 1.4). | `intent/llm.py` |
-| 5 | Validation checks the plan: device exists? vendor supported? device up? dangerous commands? real interface names? | `validation/validator.py`, `validation/rules.py` |
+| 5 | Validation checks the plan: device exists? vendor supported? device up? dangerous commands? real interface names? | `validation/validator.py`, `vendors/` |
 | 6 | If validation found errors, the errors are sent back to the AI for **one more try**. | `pipeline.py` |
 | 7 | The plan (commands, rollback, errors, warnings) is shown on the page. | `index.html` |
 | 8 | You click **Approve & apply** (`POST /api/approve/<id>`). The plan is **validated again** (the network may have changed). | `web.py`, `pipeline.py` |
@@ -130,8 +130,15 @@ Graduation-project/
 │   │   └── translator.py          [CORE]     instructions + examples for the AI, the plan shape
 │   │
 │   ├── validation/                LAYER 3
-│   │   ├── validator.py           [CORE]     the safety checks
-│   │   └── rules.py               [CORE]     lists of dangerous / warning commands per vendor
+│   │   └── validator.py           [CORE]     the safety checks
+│   │
+│   ├── vendors/                   USED BY ALL LAYERS: one file per vendor
+│   │   ├── base.py                [CORE]     what a vendor file contains (VendorProfile)
+│   │   ├── __init__.py            [CORE]     the list of vendors
+│   │   ├── cisco_ios.py           [CORE]     Cisco IOS (your EVE-NG lab)
+│   │   ├── huawei.py, fortigate.py, cisco_nxos.py, arista_eos.py,
+│   │   │   mikrotik_routeros.py   [OPTIONAL] other vendors
+│   │   └── simulated.py           [OPTIONAL] the fake device (acts like Cisco IOS)
 │   │
 │   ├── control/                   LAYER 4
 │   │   └── controller.py          [CORE]     apply, rollback, check steps, history
@@ -271,31 +278,61 @@ request, answer in exactly this JSON shape".
   (Ollama's default 2048 tokens silently cuts long instructions).
 - `get_llm()`: picks one based on `LLM_PROVIDER` in `.env`.
 
-**`translator.py`** (136 lines). The "brain instructions":
+**`translator.py`** (112 lines). The "brain instructions":
 - `PLAN_SCHEMA`: the exact JSON shape of a plan (Part 1.4).
-- `SYSTEM_PROMPT`: rules for the AI (config vs check steps, use real interface names,
-  Cisco interface sub-mode, how to block traffic with ACLs)
-  + **worked examples** (small models learn a lot from examples).
+- `SYSTEM_PROMPT`: general rules for the AI (config vs check steps, use real interface
+  names, one step per device...).
+- `_vendor_notes()`: adds the rules + **worked examples** of each vendor that is in your
+  network, taken from its file in `ibn/vendors/` (small models learn a lot from examples).
 - `translate()`: inserts your device list (with interface IPs, without passwords), asks
-  the AI, then cleans the answer (removes `configure terminal`/`end`, which the driver adds itself).
+  the AI, then cleans the answer: removes the lines the driver adds itself, per vendor
+  (`configure terminal`/`end` on Cisco, `system-view`/`return` on Huawei, nothing on
+  FortiGate because there `end` is part of the config).
 
-👉 **This is the file to edit to make the AI smarter** (better rules, more examples).
+👉 To make the AI smarter: general rules here, vendor rules/examples in `ibn/vendors/<vendor>.py`.
 
 ### Layer 3: Validation (`ibn/validation/`)
 
-**`validator.py`** (96 lines). `validate(plan) → {"ok", "errors", "warnings"}`. Checks:
+**`validator.py`** (112 lines). `validate(plan) → {"ok", "errors", "warnings"}`. Checks:
 1. the device exists in the knowledge base
 2. there is a driver for its vendor
 3. the device isn't "down"
 4. there are commands (and a rollback, else a warning)
-5. no **blocked** commands (from `rules.py`), even inside the rollback
-6. `check` steps contain only read-only commands; `config` steps don't contain `ping`/`show`
-7. physical interface names (`Ethernet0/0`, `Gi0/1`...) really exist on that device
+5. no **blocked** commands (the vendor's `blocked` list), even inside the rollback
+6. `check` steps contain only that vendor's read-only commands (`show`/`ping` on Cisco,
+   `display` on Huawei, `get`/`execute ping` on FortiGate); `config` steps don't contain them
+7. physical interface names (`Ethernet0/0`, `Gi0/1`, `GE0/0/1`...) really exist on that device
+8. a risky change on a single point of failure gets a warning saying what would be cut off
 
 Errors **block** the plan (no Approve button). Warnings are shown, you decide.
 
-**`rules.py`** (41 lines). Just **lists**, no logic: `BLOCKED` (per vendor),
-`WARN`, `CHECK_ALLOWED`. 👉 To add a safety rule you only add one line here.
+The rule **lists** themselves are in the vendor files (next section).
+👉 To add a safety rule you add one line to `blocked` or `warn` in `ibn/vendors/<vendor>.py`.
+
+### Shared by all layers: Vendor profiles (`ibn/vendors/`)
+
+Every vendor speaks a different language (`no vlan 10` on Cisco, `undo vlan 10` on
+Huawei, `config ... end` blocks on FortiGate). Instead of spreading that over many
+files, **each vendor has one file** with everything about it:
+
+| Field | Used by | Example (Cisco IOS) |
+|---|---|---|
+| `netmiko_type` | driver | `cisco_ios` |
+| `show_config`, `show_interfaces` | driver (backup, Find links) | `show running-config` |
+| `parse_interfaces` | driver | reads the "interface + IP" table |
+| `error_markers` | driver | `% Invalid` = the device refused the command → rollback |
+| `neighbors` | Find links | `cdp` (others: not yet) |
+| `check_commands` | validation | `show`, `ping`, `traceroute` |
+| `blocked`, `warn` | validation | `reload` blocked, `shutdown` warns |
+| `wrapper_lines` | intent | `conf t`, `end` removed from the AI's answer |
+| `ai_hints` | intent | vendor rules + example plans for the AI |
+
+`base.py` defines these fields (`VendorProfile`). `__init__.py` holds the list `VENDORS`.
+`cisco_nxos.py`, `arista_eos.py` and `simulated.py` copy Cisco IOS and change only what differs.
+FortiGate needs its own interface reader (`fortigate_interfaces`) because it shows
+interfaces as config blocks, not a table.
+👉 **Adding a vendor = one new file here + one line in `__init__.py`.** The drivers,
+validation, AI and the web drop-down pick it up automatically.
 
 ### Layer 4: Control (`ibn/control/`)
 
@@ -315,14 +352,16 @@ Errors **block** the plan (no Approve button). Warnings are shown, you decide.
 The control layer only calls these names, so it never needs to know if it's talking
 to Cisco over SSH, a simulated device, or (in the future) an SDN controller.
 
-**`drivers/__init__.py`** (26 lines): **the registry**. A dictionary
-`vendor name → driver class`. `get_driver(device)` looks up the device's vendor here.
-👉 Adding a vendor = one line here.
+**`drivers/__init__.py`**: **the registry**. A dictionary `vendor name → driver class`.
+Every vendor profile with a Netmiko type gets `NetmikoDriver` automatically.
+`get_driver(device)` looks up the device's vendor here.
+👉 Adding a new *method* (API, NETCONF, SDN) = one line here.
 
-**`drivers/netmiko_cli.py`** (83 lines): every CLI device, via the Netmiko library
-(which knows 100+ vendors). `NETMIKO_TYPES` = our vendor name → (Netmiko type,
-"show config" command, "show interfaces" command). SSH or Telnet (`protocol` field).
-Detects device errors (`% Invalid input`...) so a rejected command raises an error → rollback.
+**`drivers/netmiko_cli.py`**: every CLI device, via the Netmiko library (which knows
+100+ vendors). It reads the vendor profile for the Netmiko type, the "show config" and
+"show interfaces" commands and the error texts. SSH or Telnet (`protocol` field).
+Detects device errors (`% Invalid input`, `Error:`, `Command fail`...) so a rejected
+command raises an error → rollback.
 
 **`drivers/simulated.py`** (28 lines): a fake device in memory. A command containing
 "invalid" fails (to demo rollback). *Optional*, but the tests use it and it's great for demos.
@@ -552,7 +591,7 @@ The **minimal core** (what the system can't run without) is:
 ```
 run.py, requirements.txt, .env, ibn/settings.py, ibn/pipeline.py,
 interface/ (web.py, index.html, vis-network.min.js), intent/ (llm.py, translator.py),
-validation/ (validator.py, rules.py), control/controller.py,
+validation/validator.py, vendors/ (base.py, __init__.py, your vendors), control/controller.py,
 drivers/ (__init__.py, base.py, netmiko_cli.py), knowledge/ (base.py + ONE of the two storages)
 ```
 
@@ -615,10 +654,11 @@ modified and extended. The rule is simple:
 ## Part 6: How to upgrade each layer (where to edit)
 
 ### Add a vendor
-1. If Netmiko supports it: one line in `NETMIKO_TYPES` (`drivers/netmiko_cli.py`).
-2. One line in `DRIVERS` (`drivers/__init__.py`) if it needs a new driver class.
-3. Add it to the vendor drop-down (`index.html`).
-4. Optional: its dangerous commands in `rules.py`, and an example in `translator.py`.
+1. Copy a file in `ibn/vendors/` (e.g. `huawei.py`) to `ibn/vendors/<new>.py` and change
+   the values (Netmiko type, commands, dangerous commands, AI examples).
+2. Add it to the list in `ibn/vendors/__init__.py`.
+3. Only if it needs special handling (e.g. Juniper's `commit`): a small driver class
+   and one line in `DRIVERS` (`drivers/__init__.py`).
 
 ### Add a new access method (REST API, NETCONF, SNMP) or SDN
 Create `drivers/restconf.py` with `class RestconfDriver(Driver)` and the 4 methods,
@@ -636,7 +676,7 @@ model; with the Claude API it would be fast. The old version is in the Git histo
 - Use Claude: `LLM_PROVIDER=claude` + `ANTHROPIC_API_KEY` in `.env`. No code change.
 - Bigger local model: `OLLAMA_MODEL=qwen2.5:14b`. No code change.
 - Another provider: a new class with `ask_json()` in `llm.py` + one line in `get_llm()`.
-- Smarter answers: more rules/examples in `translator.py`.
+- Smarter answers: more rules/examples in `translator.py` (general) or `ibn/vendors/` (per vendor).
 
 ### Upgrade the UI
 Small changes: edit `index.html`. Big redesign (React, dashboards): build a new front end

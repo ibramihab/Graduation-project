@@ -1,6 +1,8 @@
 """Driver registry: device "vendor" -> the class that knows how to talk to it.
 
-To support a new vendor or method, write a Driver class and add ONE line here.
+Every vendor profile with a Netmiko type (ibn/vendors/) gets the NetmikoDriver
+automatically, so a new CLI vendor needs no change here.
+A new METHOD (API, NETCONF, SDN...) = write a Driver class and add ONE line here.
 Ideas for later:
     "juniper_junos": JunosDriver      (CLI with commit)
     "rest_api":      RestApiDriver    (devices with an HTTP/RESTCONF API)
@@ -8,11 +10,12 @@ Ideas for later:
     "sdn_onos":      OnosDriver       (talks to an SDN controller instead of a device)
 """
 from .base import Driver
-from .netmiko_cli import NETMIKO_TYPES, NetmikoDriver
+from ...vendors import VENDORS
+from .netmiko_cli import NetmikoDriver
 from .simulated import SimulatedDriver
 
 DRIVERS: dict[str, type[Driver]] = {
-    **{vendor: NetmikoDriver for vendor in NETMIKO_TYPES},  # cisco_ios, arista_eos, ...
+    **{name: NetmikoDriver for name, p in VENDORS.items() if p.netmiko_type},  # cisco_ios, huawei, ...
     "simulated": SimulatedDriver,
 }
 

@@ -219,3 +219,93 @@ def test_graph_api(kb):
     assert client.get("/api/graph/path?a=SW1&b=SW3").json["path"][2] == "R2"
     assert client.get("/api/graph/impact/R2").json["groups"] == [["R1", "SW1"], ["R3", "SW3"]]
     assert client.get("/api/graph/critical").json["critical"] == ["R1", "R2", "R3"]
+
+
+# ---- vendor profiles (ibn/vendors/) ----
+from ibn.infrastructure.drivers import DRIVERS  # noqa: E402
+from ibn.infrastructure.drivers.netmiko_cli import NetmikoDriver  # noqa: E402
+from ibn.intent.translator import _clean  # noqa: E402
+from ibn.vendors import VENDORS, get_vendor  # noqa: E402
+
+
+def examples(profile):
+    """The example plans written in a vendor's AI hints."""
+    import json
+    blocks = profile.ai_hints.split("Examples:")[-1].split("\n\n")
+    return [json.loads(b[b.index("{"):]) for b in blocks if "{" in b]
+
+
+def test_every_vendor_has_a_driver_and_valid_examples(tmp_path):
+    for profile in VENDORS.values():
+        assert profile.name in DRIVERS
+        kb = FileGraph(str(tmp_path / f"{profile.name}.json"))
+        for plan in examples(profile):
+            for c in plan["changes"]:
+                kb.add_device({"name": c["device"], "ip": "10.0.0.1",
+                               "vendor": profile.name, "state": "up"})
+            result = validate(plan, kb)
+            assert result["ok"], (profile.name, result["errors"])
+
+
+def test_vendor_rules_are_per_vendor(tmp_path):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    kb.add_device({"name": "HW1", "ip": "10.0.0.1", "vendor": "huawei", "state": "up"})
+    kb.add_device({"name": "FW1", "ip": "10.0.0.2", "vendor": "fortigate", "state": "up"})
+    # dangerous commands of each vendor
+    assert not validate({"changes": [change("HW1", ["reset saved-configuration"], ["x"])]}, kb)["ok"]
+    assert not validate({"changes": [change("FW1", ["execute factoryreset"], ["x"])]}, kb)["ok"]
+    # each vendor's own read-only commands
+    assert validate({"changes": [change("HW1", ["display vlan"], [], "check")]}, kb)["ok"]
+    assert validate({"changes": [change("FW1", ["get system status"], [], "check")]}, kb)["ok"]
+    assert not validate({"changes": [change("FW1", ["show"], [], "config")]}, kb)["ok"]
+    assert not validate({"changes": [change("HW1", ["show vlan"], [], "check")]}, kb)["ok"]
+
+
+def test_huawei_short_interface_names(tmp_path):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    kb.add_device({"name": "HW1", "ip": "10.0.0.1", "vendor": "huawei", "state": "up",
+                   "interfaces": ["GigabitEthernet0/0/1 10.0.5.1"]})
+    ok = change("HW1", ["interface GE0/0/1", "undo shutdown", "quit"], ["x"])
+    bad = change("HW1", ["interface GE0/0/9", "undo shutdown", "quit"], ["x"])
+    assert validate({"changes": [ok]}, kb)["ok"]
+    assert not validate({"changes": [bad]}, kb)["ok"]
+
+
+def test_vendor_interface_parsing():
+    huawei = """Interface                         IP Address/Mask      Physical   Protocol
+GigabitEthernet0/0/1              10.0.5.1/24          up         up
+LoopBack0                         unassigned           up         up(s)"""
+    assert get_vendor("huawei").parse_interfaces(huawei) == [
+        "GigabitEthernet0/0/1 10.0.5.1", "LoopBack0 unassigned"]
+    forti = """config system interface
+    edit "port1"
+        set ip 192.168.1.99 255.255.255.0
+        config ipv6
+        end
+    next
+    edit "port2"
+    next
+end"""
+    assert get_vendor("fortigate").parse_interfaces(forti) == ["port1 192.168.1.99", "port2 unassigned"]
+
+
+def test_wrapper_lines_are_cleaned_per_vendor():
+    assert _clean(["conf t", "vlan 10", "end"], get_vendor("cisco_ios").wrapper_lines) == ["vlan 10"]
+    forti = ["config system interface", "edit port2", "set ip 1.1.1.1 255.0.0.0", "next", "end"]
+    assert _clean(forti, get_vendor("fortigate").wrapper_lines) == forti  # "end" is needed!
+
+
+def test_driver_uses_the_vendor_error_markers():
+    class FakeConn:
+        def send_config_set(self, commands):
+            return "Command fail. Return code -61"
+    driver = NetmikoDriver({"name": "FW1", "ip": "1.1.1.1", "vendor": "fortigate"})
+    driver.profile, driver.conn = get_vendor("fortigate"), FakeConn()
+    with pytest.raises(RuntimeError):
+        driver.send_config(["config system interface"])
+
+
+def test_vendor_dropdown_comes_from_profiles(tmp_path):
+    client = create_app(FileGraph(str(tmp_path / "kb.json")), FakeLLM({})).test_client()
+    page = client.get("/").text
+    assert 'value="fortigate"' in page and 'value="huawei"' in page

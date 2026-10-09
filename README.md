@@ -43,7 +43,7 @@ text ─► intent.translate() ─► validation.validate() ─► [you click Ap
 |---|---|---|
 | You type a request | `interface/templates/index.html` | The page sends it to `POST /api/intent` |
 | **Intent** | `intent/translator.py` | Sends the request + the device list with their interface IPs (no passwords) to the LLM. The LLM must answer in a fixed JSON shape: a list of steps, each with a device, a `type`, `commands` and `rollback` (undo) commands. Type `config` changes the device (configuration mode); type `check` runs read-only commands like `ping` / `show` (normal mode, no rollback). |
-| **Validation** | `validation/validator.py` + `rules.py` | Device exists? Vendor supported? Device up? Commands present? Any dangerous command (`reload`, `erase`, `no username`, ...)? Errors **block** the plan; warnings are shown to you. |
+| **Validation** | `validation/validator.py` + the vendor's file in `vendors/` | Device exists? Vendor supported? Device up? Commands present? Any dangerous command for that vendor (`reload`, `erase`, `no username`, ...)? Errors **block** the plan; warnings are shown to you. |
 | You click Approve | `pipeline.py` | The plan is validated **again** (the network could have changed). |
 | **Control** | `control/controller.py` | For each `config` step: connect, save a config backup to the knowledge base, send commands. If any device fails, the rollback runs on every device already changed. `check` steps just run and show their output. Everything goes into the device's history. |
 | **Infrastructure** | `infrastructure/drivers/` | The code that actually talks to devices (see below). |
@@ -186,8 +186,22 @@ Each way of talking to a device is a **driver** class with the same 4 methods
 
 | vendor value | Driver | How |
 |---|---|---|
-| `cisco_ios`, `cisco_nxos`, `arista_eos`, `huawei`, `mikrotik_routeros` | `netmiko_cli.py` | SSH or Telnet with the [Netmiko](https://github.com/ktbyers/netmiko) library |
+| `cisco_ios`, `cisco_nxos`, `arista_eos`, `huawei`, `fortigate`, `mikrotik_routeros` | `netmiko_cli.py` | SSH or Telnet with the [Netmiko](https://github.com/ktbyers/netmiko) library |
 | `simulated` | `simulated.py` | A fake device in memory, for learning and tests |
+
+### Vendor profiles: one file per vendor (`ibn/vendors/`)
+Everything that differs between vendors is in **one file per vendor**, and every layer reads it:
+
+| In the vendor file | Used by | Cisco IOS | Huawei | FortiGate |
+|---|---|---|---|---|
+| `ai_hints` (rules + examples) | Intent (the AI) | `no vlan 20` | `undo vlan 20`, `quit` | `config ... / edit / next / end` |
+| `wrapper_lines` (removed from AI answer) | Intent | `conf t`, `end` | `system-view`, `return` | nothing (`end` is needed) |
+| `check_commands` (read-only) | Validation | `show`, `ping` | `display`, `ping`, `tracert` | `get`, `show`, `execute ping` |
+| `blocked` / `warn` | Validation | `reload`, `no username` | `reboot`, `undo local-user` | `execute factoryreset`, `config system admin` |
+| `netmiko_type`, `show_config`, `show_interfaces`, `error_markers` | Driver | `% Invalid` | `Error:` | `Command fail` |
+| `neighbors` | Find links | CDP | not yet | not yet |
+
+The AI only receives the notes of vendors that are really in your network.
 
 Home routers that only have a web page are not supported (an AI browser agent was
 tried, but a local AI on a laptop was too slow for it). A new driver can add them later.
@@ -196,12 +210,13 @@ tried, but a local AI on a laptop was too slow for it). A new driver can add the
 
 ## 6. How to grow it (where each upgrade goes)
 
-### Add a new CLI vendor (e.g. Juniper, Fortinet, HP)
-1. If Netmiko supports it ([list](https://github.com/ktbyers/netmiko/blob/develop/PLATFORMS.md)),
-   add one line to `NETMIKO_TYPES` in `infrastructure/drivers/netmiko_cli.py`:
-   `"fortinet": ("fortinet", "show full-configuration"),`
-2. Add it to the vendor drop-down in `interface/templates/index.html`.
-3. Optional: add its dangerous commands in `validation/rules.py`.
+### Add a new CLI vendor (e.g. Juniper, HP, Palo Alto)
+1. Copy a file in `ibn/vendors/` (e.g. `huawei.py`) and change the values: its Netmiko
+   type ([list](https://github.com/ktbyers/netmiko/blob/develop/PLATFORMS.md)), commands,
+   dangerous commands, and a few examples for the AI.
+2. Add it to the list in `ibn/vendors/__init__.py`.
+
+That's all: the driver, the validation and the web drop-down pick it up automatically.
 
 Juniper needs a `commit` after the commands: make a small `JunosDriver(NetmikoDriver)`
 that overrides `send_config` to call `self.conn.commit()`, and register it in
@@ -250,7 +265,7 @@ ibn/
   intent/llm.py                Claude (cloud) and Ollama (local) LLMs
   intent/translator.py         prompt + JSON shape of a plan
   validation/validator.py      the checks
-  validation/rules.py          dangerous commands per vendor
+  vendors/                     one file per vendor: commands, safety rules, AI examples
   control/controller.py        apply + rollback + history
   infrastructure/discovery.py  ping scan, port check, CDP links
   infrastructure/drivers/      one file per way of talking to devices

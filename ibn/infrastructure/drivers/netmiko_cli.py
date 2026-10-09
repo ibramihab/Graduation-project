@@ -1,31 +1,21 @@
 """Traditional CLI devices over SSH or Telnet, using the Netmiko library.
 
-Netmiko already knows 100+ vendors, so supporting a new CLI vendor is
-usually ONE line in NETMIKO_TYPES below (plus one line in drivers/__init__.py).
-Full list: https://github.com/ktbyers/netmiko/blob/develop/PLATFORMS.md
+Netmiko already knows 100+ vendors. Everything vendor-specific (Netmiko type, which
+command shows the config, how errors look...) comes from the vendor profile in
+ibn/vendors/, so this file never changes when a vendor is added.
+Netmiko's vendor list: https://github.com/ktbyers/netmiko/blob/develop/PLATFORMS.md
 """
 from netmiko import ConnectHandler
 
 from ... import settings
+from ...vendors import get_vendor
 from .base import Driver
-
-# our vendor name -> (netmiko device type, command that shows the config,
-#                     command that lists interface IPs)
-NETMIKO_TYPES = {
-    "cisco_ios": ("cisco_ios", "show running-config", "show ip interface brief"),
-    "cisco_nxos": ("cisco_nxos", "show running-config", "show ip interface brief"),
-    "arista_eos": ("arista_eos", "show running-config", "show ip interface brief"),
-    "huawei": ("huawei", "display current-configuration", "display ip interface brief"),
-    "mikrotik_routeros": ("mikrotik_routeros", "/export", ""),
-}
-
-# Text that means the device did not accept a command.
-ERROR_MARKERS = ["% Invalid", "% Incomplete", "% Ambiguous", "% Unknown", "Error:"]
 
 
 class NetmikoDriver(Driver):
     def connect(self):
-        device_type, self.show_config_cmd, self.show_ip_cmd = NETMIKO_TYPES[self.device["vendor"]]
+        self.profile = get_vendor(self.device["vendor"])
+        device_type = self.profile.netmiko_type
         if self.device.get("protocol") == "telnet":
             device_type += "_telnet"
         self.conn = ConnectHandler(
@@ -43,11 +33,11 @@ class NetmikoDriver(Driver):
             self.conn.disconnect()
 
     def get_config(self):
-        return self.conn.send_command(self.show_config_cmd)
+        return self.conn.send_command(self.profile.show_config)
 
     def send_config(self, commands):
         output = self.conn.send_config_set(commands)  # enters/leaves config mode for us
-        for marker in ERROR_MARKERS:
+        for marker in self.profile.error_markers:
             if marker in output:
                 raise RuntimeError(f"Device rejected a command:\n{output}")
         return output
@@ -61,20 +51,14 @@ class NetmikoDriver(Driver):
         return "\n\n".join(output)
 
     def get_interfaces(self):
-        if not self.show_ip_cmd:
+        if not self.profile.show_interfaces:
             return []
-        # Lines look like: "Ethernet0/0   10.1.2.1     YES manual up   up"
-        #                  "Ethernet0/1   unassigned   YES unset  administratively down down"
-        interfaces = []
-        for line in self.conn.send_command(self.show_ip_cmd).splitlines():
-            parts = line.split()
-            if len(parts) >= 2 and parts[0][-1].isdigit():  # skips the header line
-                interfaces.append(f"{parts[0]} {parts[1]}")
-        return interfaces
+        output = self.conn.send_command(self.profile.show_interfaces)
+        return self.profile.parse_interfaces(output)  # -> ["Ethernet0/0 10.1.2.1", ...]
 
     def get_neighbors(self):
         # Cisco Discovery Protocol tells us who is plugged into this device.
-        if not self.device["vendor"].startswith("cisco"):
+        if self.profile.neighbors != "cdp":
             return []
         rows = self.conn.send_command("show cdp neighbors detail", use_textfsm=True)
         if not isinstance(rows, list):  # parsing failed -> no neighbors

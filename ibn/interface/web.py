@@ -8,6 +8,7 @@ from .. import pipeline
 from ..infrastructure import discovery
 from ..intent import get_llm
 from ..knowledge import get_knowledge_base, graph_analysis
+from ..vendors import VENDORS
 
 
 def create_app(kb=None, llm=None) -> Flask:
@@ -17,7 +18,7 @@ def create_app(kb=None, llm=None) -> Flask:
 
     @app.get("/")
     def home():
-        return render_template("index.html")
+        return render_template("index.html", vendors=VENDORS.values())  # vendor dropdown
 
     # ---- the main flow: type -> see plan -> approve ----
     @app.post("/api/intent")
