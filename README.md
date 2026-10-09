@@ -154,12 +154,23 @@ Each way of talking to a device is a **driver** class with the same 4 methods
 | vendor value | Driver | How |
 |---|---|---|
 | `cisco_ios`, `cisco_nxos`, `arista_eos`, `huawei`, `mikrotik_routeros` | `netmiko_cli.py` | SSH or Telnet with the [Netmiko](https://github.com/ktbyers/netmiko) library |
-| `web_gui` | `web_gui.py` | For home routers with only a web page: downloads the page, finds the HTML forms, asks the LLM which fields to fill, submits the form. Its "commands" are English, e.g. `set wifi name to Home5G`. Give the device a `url` like `http://192.168.1.1/wireless.html`. |
+| `web_gui` | `web_gui.py` | For home routers with only a web page (any brand). A small **browser agent**: opens the page in a real browser, numbers everything you can click or type into, and asks the AI for the next action (log in, open menus, fill a field, click Apply) until the task is done. Its "commands" are English, e.g. `Change the Wi-Fi name to Home5G`. Give the device a `url` (e.g. `http://192.168.1.254`) and its own login username/password. |
 | `simulated` | `simulated.py` | A fake device in memory, for learning and tests |
 
-The web GUI driver is the simplest version that works for plain HTML forms with
-basic login. Routers that build the page with JavaScript need a real browser
-(see "Ideas" below).
+How the browser agent works, step by step:
+
+```
+open router page -> list elements:  [0] <input id=Frm_Username> label="Username" value=""
+                                    [1] <input type=password id=Frm_Password> value=""
+                                    [2] <button> "Login"
+AI: fill [0] "{username}"  ->  AI: fill [1] "{password}"  ->  AI: click [2]
+-> menus appear -> AI: click "Local Network" -> AI: click "WLAN" -> AI: fill SSID -> AI: click "Apply" -> done
+```
+
+- The AI never sees the router password: it writes `{password}` and the driver types the real one.
+- Read-only tasks ("Read the current Wi-Fi name") may only log in and click menus, never Apply/Save.
+- `SHOW_BROWSER=true` in `.env` lets you watch it work (nice for a demo).
+- `tests/test_web_gui.py` tests it against a fake router website (`tests/fake_router.py`).
 
 ---
 
@@ -203,7 +214,6 @@ That's it. Any other LLM = a new class with an `ask_json()` method in `intent/ll
 ### Other ideas
 - Users and login on the web page (there is none yet, so run it only on a lab network).
 - Store device passwords encrypted per device (now there is one shared login in `.env`).
-- A JavaScript-capable browser (Playwright) for web-GUI routers.
 - Monitoring loop: re-check the intent every few minutes and fix drift ("closed loop" IBN).
 
 ---

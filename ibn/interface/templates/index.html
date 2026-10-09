@@ -72,7 +72,11 @@
       </select>
       <select id="d-protocol"><option>ssh</option><option>telnet</option><option>http</option></select>
     </div>
-    <input id="d-url" placeholder="Web page URL (only for web_gui)">
+    <input id="d-url" placeholder="Web page URL (only for web_gui, e.g. http://192.168.1.254)">
+    <div class="row">
+      <input id="d-username" placeholder="Login username (optional, else from .env)">
+      <input id="d-password" type="password" placeholder="Login password (optional)">
+    </div>
     <button onclick="addDevice()">Save device</button>
     <h2 style="margin-top:16px">Link two devices</h2>
     <div class="row">
@@ -150,11 +154,13 @@ async function load() {
 
 function edit(name) {
   const d = window.devices.find(x => x.name === name);
-  for (const k of ["name", "ip", "vendor", "protocol", "url"]) document.getElementById("d-" + k).value = d[k] || "";
+  for (const k of ["name", "ip", "vendor", "protocol", "url", "username"]) document.getElementById("d-" + k).value = d[k] || "";
+  document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
 }
 async function addDevice() {
   const d = {};
-  for (const k of ["name", "ip", "vendor", "protocol", "url"]) d[k] = document.getElementById("d-" + k).value;
+  for (const k of ["name", "ip", "vendor", "protocol", "url", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
+  document.getElementById("d-password").value = "";
   show(await post("/api/devices", d)); load();
 }
 async function addLink() {

@@ -69,8 +69,11 @@ Rules:
   device that should not receive the traffic (outbound ACLs do not filter traffic the
   router creates itself). The rollback removes it from the interfaces first, then
   deletes the list.
-- For vendor "web_gui" (home routers with only a web page), write short English steps
-  instead of CLI, for example "set wifi name to Home5G".
+- For vendor "web_gui" (home routers with only a web page) write ONE plain English
+  sentence per step instead of CLI. A browser AI will find the right page by itself.
+  Example config step: "Change the Wi-Fi network name (SSID) to Home5G".
+  Example check step: "Read the current Wi-Fi network name".
+  Rollback: English sentences that undo it, or [] if you don't know the old value.
 - If the request is unclear or impossible, return no steps and explain why in "summary".
 
 Examples (Cisco IOS):

@@ -28,5 +28,10 @@ DEVICE_USERNAME = os.getenv("DEVICE_USERNAME", "admin")
 DEVICE_PASSWORD = os.getenv("DEVICE_PASSWORD", "admin")
 DEVICE_SECRET = os.getenv("DEVICE_SECRET", "")  # Cisco "enable" password
 
+# true = show the browser window when the AI controls a web-page router (web_gui)
+SHOW_BROWSER = os.getenv("SHOW_BROWSER", "true").lower() == "true"
+# optional: path to a Chrome/Chromium to use instead of Playwright's own browser
+BROWSER_PATH = os.getenv("BROWSER_PATH", "")
+
 # true = do everything except really sending config to devices
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"

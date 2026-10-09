@@ -49,7 +49,10 @@ class OllamaLLM:
             "model": self.model,
             "stream": False,
             "format": schema,  # Ollama also supports forcing a JSON schema
-            "options": {"temperature": 0},  # no randomness: small models make fewer mistakes
+            # temperature 0 = no randomness: small models make fewer mistakes.
+            # num_ctx = how much text the model can read at once. Ollama's default (2048)
+            # silently cuts off our long prompts, so we raise it.
+            "options": {"temperature": 0, "num_ctx": 8192},
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
         })

@@ -7,6 +7,8 @@ if not exist venv\Scripts\python.exe (
     echo First run: installing libraries, please wait...
     python -m venv venv
     venv\Scripts\python.exe -m pip install -r requirements.txt
+REM the browser that the AI uses for web-page routers (web_gui)
+venv\Scripts\python.exe -m playwright install chromium
 )
 
 REM First time only: create the settings file
