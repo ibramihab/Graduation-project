@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Optional port per device (for PAT / port forwarding)
+- 🟡 `ibn/infrastructure/drivers/netmiko_cli.py`: connects to the device's `port` if set
+  (empty = normal 22/23).
+- 🟡 `ibn/interface/web.py` + `index.html`: new **Port** box in "Add / edit a device";
+  the device table shows `ip:port`.
+- 🟡 `tests/test_ibn.py`: 1 new test. `README.md`, `docs/PROJECT_GUIDE.md`: one line each.
+
 ### Topology view remembers zoom and position
 - 🟡 `ibn/interface/templates/index.html`: zoom and view position saved in the browser;
   new **Center view** button.

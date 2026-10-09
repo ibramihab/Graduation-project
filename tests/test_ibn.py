@@ -309,3 +309,17 @@ def test_vendor_dropdown_comes_from_profiles(tmp_path):
     client = create_app(FileGraph(str(tmp_path / "kb.json")), FakeLLM({})).test_client()
     page = client.get("/").text
     assert 'value="fortigate"' in page and 'value="huawei"' in page
+
+
+def test_device_port_for_pat(tmp_path, monkeypatch):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    client = create_app(kb, FakeLLM({})).test_client()
+    client.post("/api/devices", json={"name": "R1", "ip": "192.168.1.202", "vendor": "cisco_ios", "port": "2201"})
+    assert kb.get_device("R1")["port"] == 2201
+    seen = {}
+    monkeypatch.setattr("ibn.infrastructure.drivers.netmiko_cli.ConnectHandler",
+                        lambda **kw: seen.update(kw))
+    NetmikoDriver(kb.get_device("R1")).connect()
+    assert seen["host"] == "192.168.1.202" and seen["port"] == 2201
+    client.post("/api/devices", json={"name": "R1", "port": ""})  # empty = back to normal port
+    assert not kb.get_device("R1")["port"]

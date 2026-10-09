@@ -579,6 +579,7 @@ also receives the list of links so it knows how devices are connected.
 | Added a device | **Save device**, then **Find links & IPs** |
 | Removed a device | **X** next to it |
 | Management IP (e0/3) | **Edit** → change IP → **Save device** |
+| Devices reached through one router with PAT (port forwarding) | **Edit** each device: IP = the router's outside IP, **Port** = its forwarded port (e.g. 2201). Note: ping-based up/down then only shows whether that router answers. |
 
 The topology picture remembers where you dragged each box (saved in your browser).
 

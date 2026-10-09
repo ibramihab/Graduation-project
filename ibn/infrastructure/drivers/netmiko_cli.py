@@ -21,6 +21,7 @@ class NetmikoDriver(Driver):
         self.conn = ConnectHandler(
             device_type=device_type,
             host=self.device["ip"],
+            port=self.device.get("port") or None,  # empty = the normal port (22 SSH, 23 Telnet)
             username=self.device.get("username") or settings.DEVICE_USERNAME,
             password=self.device.get("password") or settings.DEVICE_PASSWORD,
             secret=settings.DEVICE_SECRET,

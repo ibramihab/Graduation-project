@@ -39,6 +39,8 @@ def create_app(kb=None, llm=None) -> Flask:
     @app.post("/api/devices")
     def add_device():
         device = {k: v for k, v in request.json.items() if v not in ("", None)}
+        if "port" in request.json:  # empty port = the normal one (also clears an old port)
+            device["port"] = int(request.json["port"]) if request.json["port"] else None
         kb.add_device(device)
         return jsonify({"ok": True})
 

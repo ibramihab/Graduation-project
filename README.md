@@ -87,6 +87,8 @@ Use GNS3, EVE-NG or real lab gear. (Cisco Packet Tracer will **not** work:
 its devices can't be reached by SSH from your PC.) On a Cisco router enable SSH, then add the device
 with vendor `cisco_ios`, its management IP, and protocol `ssh` or `telnet`.
 The login comes from `DEVICE_USERNAME` / `DEVICE_PASSWORD` in `.env`.
+The **Port** field is optional: leave it empty for the normal port (22/23), or set it when
+the device is reached through port forwarding (PAT) on another router.
 
 Set `DRY_RUN=true` in `.env` if you want to see everything work without
 sending anything to the devices.
@@ -108,7 +110,7 @@ The network is naturally a graph, so we store it as one:
 ```
 (R1:Device)-[:CONNECTED_TO]-(SW1:Device)
 (SW1:Device)-[:HAS_CHANGE]->(:Change {time, intent, commands, success})
-Device properties: name, ip, vendor, protocol, state (up/down), last_config (backup)
+Device properties: name, ip, vendor, protocol, port (optional), state (up/down), last_config (backup)
 ```
 
 There are two storage options with the **same** methods (`knowledge/base.py`):
