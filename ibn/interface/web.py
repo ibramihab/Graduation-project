@@ -78,7 +78,8 @@ def create_app(kb=None, llm=None) -> Flask:
 
     @app.post("/api/discover-links")
     def discover_links():
-        return jsonify({"errors": discovery.discover_links(kb)})
+        errors = discovery.discover_links(kb)
+        return jsonify({"errors": errors, "links": len(kb.list_links())})
 
     @app.post("/api/refresh")
     def refresh():

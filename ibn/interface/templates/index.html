@@ -46,7 +46,7 @@
       <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
       <button class="secondary" onclick="discover()">Scan (ping)</button>
     </div>
-    <button class="secondary" onclick="post('/api/discover-links').then(r => { show(r); load(); })">Find links &amp; IPs (CDP)</button>
+    <button class="secondary" onclick="findLinks()">Find links &amp; IPs (CDP)</button>
     <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
     <h2 style="margin-top:16px">Ask the network graph</h2>
     <div class="row">
@@ -190,6 +190,14 @@ async function whatIfDown() {
       ? `<span class="warn">If <b>${esc(name)}</b> goes down, the network splits into ${r.groups.length} parts that can't reach each other:</span><br>`
         + r.groups.map(g => g.map(esc).join(", ")).join("<br>")
       : `<span class="ok">If <b>${esc(name)}</b> goes down, all the other devices can still reach each other.</span>`);
+}
+async function findLinks() {
+  say("Logging in to the devices... (can take a minute)");
+  const r = await post("/api/discover-links");
+  load();
+  if (r.error) return say(`<span class="error">${esc(r.error)}</span>`);
+  say(`<span class="ok">Done: ${r.links} links in the graph, interface IPs saved.</span>` +
+      (r.errors.length ? `<br><span class="error">Problems:</span><br>` + r.errors.map(esc).join("<br>") : ""));
 }
 async function criticalDevices() {
   const r = await get("/api/graph/critical");
