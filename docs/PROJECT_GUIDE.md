@@ -3,6 +3,7 @@
 This guide explains **how the project works**, **what every file does**, **which files
 you can remove**, and **how to grow it** into a bigger project.
 Read it top to bottom once; afterwards use it as a map.
+In VS Code press **Ctrl+Shift+V** to read it formatted.
 
 ---
 
@@ -343,6 +344,8 @@ links are `CONNECTED_TO` relationships, history is `(Device)-[:HAS_CHANGE]->(Cha
 
 **`__init__.py`**: `get_knowledge_base()` picks one of the two from `KB_BACKEND` in `.env`.
 
+➡ More detail on the knowledge base, the pipeline, `__init__.py`, `templates`/`static`: **Part 3B**.
+
 ### Tests (`tests/`)
 
 **`test_ibn.py`**: 13 tests of the whole flow using a fake AI and simulated devices
@@ -351,6 +354,158 @@ AI retries after errors...). Each test runs twice: with file storage and (if
 `TEST_NEO4J=1`) with Neo4j.
 Run all tests: `venv\Scripts\python -m pytest`. **Run them after every change.** If they
 pass, you didn't break anything. *Not needed to run the program*, but they are your safety net.
+
+---
+
+## Part 3B: A closer look at the confusing parts
+
+### What is `__init__.py`?
+
+Python rule: **a folder is only a "package" (something other code can import from) if it
+contains a file named `__init__.py`.** Without it, `from ibn.intent import translate` fails.
+
+Think of it as the folder's **front door**: other parts of the program come in through it.
+Ours do one of three things:
+
+| File | Contents | Purpose |
+|---|---|---|
+| `ibn/__init__.py`, `interface/__init__.py`, `infrastructure/__init__.py` | only a comment | just marks the folder as part of the program |
+| `intent/__init__.py`, `validation/__init__.py`, `control/__init__.py` | e.g. `from .translator import translate` | **shortcut**: `from ibn.intent import translate` instead of `from ibn.intent.translator import translate` |
+| `knowledge/__init__.py` | `get_knowledge_base()` | **decision**: JSON-file storage or Neo4j, based on `KB_BACKEND` in `.env` |
+| `drivers/__init__.py` | `DRIVERS` + `get_driver()` | **vendor list**: `cisco_ios → NetmikoDriver`, `simulated → SimulatedDriver` |
+
+Never delete them.
+
+### What is the pipeline?
+
+`pipeline.py` is the **manager**. The layers don't know each other (the validator never
+calls the AI, for example); the pipeline calls them one after another in the right order.
+
+Restaurant comparison: **Interface** = the waiter who takes your order · **Intent** = the
+chef who writes the recipe · **Validation** = the food inspector · **Control** = the cook ·
+**Pipeline** = the **manager** who passes the order along in the right order.
+
+Two functions, one per button:
+
+**`propose(text)`**, called by *Make a plan* (nothing is changed on devices):
+1. get the device list from the knowledge base
+2. `translate()`: the AI turns your text into a plan
+3. `validate()`: check the plan
+4. errors? send them back to the AI and **try once more** (`ATTEMPTS = 2`)
+5. give the plan an ID (like `3b81976c`) and keep it in **`PENDING`** (a waiting list in
+   memory). Only plans that passed validation go there.
+
+**`approve(plan_id)`**, called by *Approve & apply*:
+1. take the plan out of `PENDING` (removed, so it can't be applied twice)
+2. **validate it again** (a device may have gone down since)
+3. `apply_plan()`: the control layer applies it
+
+Why a separate file: the web page is only one possible interface. A chat bot or a
+command-line tool could call the same `propose()` / `approve()`.
+
+### Interface layer: `templates/` and `static/`
+
+These two folder names are a **Flask convention** (Flask looks for exactly these names):
+
+| Folder | Holds | How it's used |
+|---|---|---|
+| `templates/` | HTML pages: our `index.html` | `web.py` sends it with `render_template("index.html")` when you open http://localhost:5000 |
+| `static/` | files sent exactly as they are (JavaScript libraries, images, CSS) | the page asks for `/static/vis-network.min.js` and Flask sends the file |
+
+- `index.html`: CSS at the top (colors, layout), HTML in the middle (boxes, buttons, the
+  devices table), JavaScript at the bottom (what each button does, how it calls the server,
+  how results are drawn).
+- `vis-network.min.js`: **not our code.** A free library that draws the topology graph.
+  "min" = squeezed into one unreadable line to be smaller. Never edit it. It's inside the
+  project so the graph works in a lab without internet.
+- `web.py` (next to the two folders): the server side, one small function per button.
+
+### The knowledge base in detail
+
+**What a graph is.** The natural way to describe a network:
+- **nodes**: the things (R1, R2, SW1…)
+- **edges (relationships)**: the connections (R1 is connected to R2)
+- **properties**: details on each node (IP, vendor, up/down…)
+
+```
+      (R1) ──CONNECTED_TO── (R2) ──CONNECTED_TO── (R3)
+       │                                            │
+  CONNECTED_TO                                 CONNECTED_TO
+       │                                            │
+     (SW1)                                        (SW3)
+
+   R1's properties: ip=192.168.1.201, vendor=cisco_ios, state=up,
+                    interfaces=[Ethernet0/0 10.1.2.1, ...], last_config=...
+   R1 ──HAS_CHANGE──► (Change: "create loopback 5", time, commands, success)
+```
+
+**What is stored, who writes it, who reads it:**
+
+| Stored | Example | Written by | Read by |
+|---|---|---|---|
+| Device (node) | name, ip, vendor, protocol | you (Save device), Scan | everyone |
+| `state` | `up` / `down` | Refresh up/down | validation (blocks devices that are down) |
+| `interfaces` | `Ethernet0/0 10.1.2.1` | Find links & IPs | the AI (real names and IPs), validation (checks names) |
+| Link (edge) | R1 — R2 | you (Link), Find links (CDP) | the topology graph |
+| `last_config` | full `show running-config` text | control layer, **before** every change (backup) | you, to restore by hand |
+| History (Change) | time, request, commands, success, device output | control layer, after every plan | the History button |
+| `username`/`password` (optional) | per-device login | you (Save device) | drivers only, **never** sent to the AI or shown on the page |
+
+**The 4 files in `ibn/knowledge/`:**
+
+**1. `base.py`: the contract (the rules).** Lists the functions every storage must have,
+without real code: `add_device` (add, or update if the name exists), `get_device` /
+`list_devices`, `update_device(name, state="down")`, `delete_device` (with its links and
+history), `add_link` / `list_links`, `record_change` / `get_history`, plus helpers
+`find_by_ip` and `save_backup`. The rest of the program uses **only these names**, which is
+why the storage can be swapped.
+
+**2. `file_graph.py`: the graph as a JSON file.** Keeps the graph in memory and writes it to
+`data/knowledge.json` after every change:
+
+```json
+{
+  "devices": {
+    "R1":  {"name": "R1", "ip": "192.168.1.201", "vendor": "cisco_ios", "state": "up",
+            "interfaces": ["Ethernet0/0 10.1.2.1", "Tunnel1 10.1.3.1"]},
+    "SW1": {"name": "SW1", "ip": "192.168.1.211", "vendor": "cisco_ios", "state": "up"}
+  },
+  "links":   [["R1", "R2"], ["R1", "SW1"]],
+  "changes": {"SW1": [{"time": "2026-10-09T14:36:51", "intent": "make vlan 10 on SW1",
+                       "commands": ["vlan 10", "name VLAN10"], "success": true}]}
+}
+```
+
+`devices` = nodes, `links` = edges, `changes` = history. A **lock** stops two clicks at the
+same moment from damaging the file. Simple, no installation, and you can open the file in
+VS Code to see exactly what the system knows.
+
+**3. `neo4j_graph.py`: the same graph in a real graph database.** Same functions, but each
+sends a query in Neo4j's language, **Cypher**:
+
+| Function | Cypher (simplified) | Meaning |
+|---|---|---|
+| `add_device` | `MERGE (d:Device {name: "R1"}) SET d += {...}` | create the node if missing, set its properties |
+| `add_link` | `MERGE (a)-[:CONNECTED_TO]-(b)` | connect two nodes (no duplicates) |
+| `list_links` | `MATCH (a)-[:CONNECTED_TO]-(b) RETURN a.name, b.name` | find all connections |
+| `record_change` | `CREATE (d)-[:HAS_CHANGE]->(:Change {...})` | attach a history node to the device |
+| `delete_device` | `DETACH DELETE d` | remove the node and all its edges |
+
+At startup it also makes device names **unique**. History is saved as JSON text inside each
+Change node (Neo4j properties can't hold nested lists). Advantages: you can **see** the
+network as a graph at http://localhost:7474, and later ask graph questions ("path from SW1
+to SW3?", "which devices depend on R2?").
+
+**4. `__init__.py`: the switch.** `get_knowledge_base()` reads `KB_BACKEND` from `.env`:
+`neo4j` → Neo4j, anything else → the JSON file. The rest of the program never knows which.
+
+| | JSON file (`file`) | Neo4j (`neo4j`) |
+|---|---|---|
+| Setup | none | Docker + `docker compose up -d` |
+| See it | open `data/knowledge.json` | graph picture at localhost:7474 |
+| Best for | learning, testing, small labs | presentation, big networks, graph questions |
+
+Switching is one line in `.env`, but you add your devices again: the two storages don't share data.
 
 ---
 
