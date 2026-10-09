@@ -88,8 +88,10 @@ def test_read_only_task_reads_without_changing(ai):
     assert STATE["ssid"] == "Orange-1234"
 
 
-def test_wrong_password_gives_a_clear_error(ai):
-    with pytest.raises(RuntimeError, match="Login failed"):
+def test_wrong_password_gives_a_clear_error(ai, monkeypatch):
+    from ibn.infrastructure.drivers.web_gui import WebGuiDriver
+    monkeypatch.setattr(WebGuiDriver, "LOGIN_WAIT", 2)  # don't wait 15 s in a test
+    with pytest.raises(RuntimeError, match="Login failed. The router's page says"):
         with get_driver({**DEVICE, "password": "wrong"}):
             pass
     assert ai.prompts == []  # logging in never needs the AI

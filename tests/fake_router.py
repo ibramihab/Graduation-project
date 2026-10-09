@@ -1,6 +1,8 @@
 """A fake home router built like modern ZTE/Huawei pages: JavaScript login form,
 <span> menus with no links, settings inside an iframe, and a Save button that uses fetch().
 Used by tests/test_web_gui.py."""
+import time
+
 from flask import Flask, request, jsonify
 app = Flask(__name__)
 STATE = {"ssid": "Orange-1234", "wifi_password": "wifi-pass-123", "logged_in": False}
@@ -32,6 +34,7 @@ showLogin();
 
 @app.post("/login")
 def login():
+    time.sleep(4)  # real routers (like ZTE) take a few seconds to log in
     ok = request.json == {"u": "admin", "p": "S3cret!"}
     STATE["logged_in"] = ok
     return jsonify(ok=ok)

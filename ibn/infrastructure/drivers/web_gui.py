@@ -14,6 +14,7 @@ Commands for this driver are plain English, e.g. "Change the Wi-Fi name to Home5
 The AI never sees the router password: it writes "{password}" and we put in the real one.
 Set SHOW_BROWSER=true in .env to watch it work in a browser window.
 """
+import os
 import re
 import time
 
@@ -146,7 +147,6 @@ class WebGuiDriver(Driver):
         self.page.on("dialog", lambda d: d.dismiss() if self.read_only else d.accept())
         self.page.goto(self.url, timeout=20000)
         self._settle()
-        self.logins = 0
         self._login_if_needed()
 
     def disconnect(self):
@@ -284,25 +284,48 @@ class WebGuiDriver(Driver):
                 pass  # frame still loading or gone
         return None
 
+    LOGIN_WAIT = 15  # seconds to wait for a login to finish (routers can be slow)
+
     def _login_if_needed(self):
-        form = self._login_form()
-        if not form:
-            return
-        if self.logins >= 2:
-            raise RuntimeError("Login failed: check the router's username and password "
-                               "(Edit the device in the web page and save them again).")
-        self.logins += 1
-        self._log("login page found: logging in (no AI needed)")
-        frame, button = form
-        username, password = self._credentials()
-        user_box = frame.locator("input[type=text]:visible, input[type=email]:visible, input:not([type]):visible")
-        if user_box.count():
-            user_box.first.fill(username)
-        frame.locator("input[type=password]:visible").first.fill(password)
-        button.click(timeout=5000)
-        self._settle()
-        self.page.wait_for_timeout(1500)  # some routers need a moment after login
-        self._login_if_needed()  # still on the login page? try once more, then give up clearly
+        for attempt in (1, 2):
+            form = self._login_form()
+            if not form:
+                return  # not a login page (or the login worked)
+            frame, button = form
+            self._log(f"login page found: logging in, try {attempt} (no AI needed)")
+            username, password = self._credentials()
+            user_box = frame.locator("input[type=text]:visible, input[type=email]:visible, input:not([type]):visible")
+            if user_box.count():
+                user_box.first.fill(username)
+            password_box = frame.locator("input[type=password]:visible").first
+            password_box.fill(password)
+            if attempt == 1:
+                button.click(timeout=5000)
+            else:
+                password_box.press("Enter")  # second try: some pages log in with Enter
+            # wait (up to LOGIN_WAIT seconds) until the login page is gone
+            for _ in range(self.LOGIN_WAIT):
+                self.page.wait_for_timeout(1000)
+                if not self._login_form():
+                    self._log("logged in")
+                    self._settle()
+                    return
+        # Still on the login page: say what the router's page shows, and keep a screenshot.
+        try:
+            message = frame.evaluate("document.body.innerText").strip().replace("\n", " ")[:300]
+        except Exception:
+            message = "?"
+        try:
+            os.makedirs("data", exist_ok=True)
+            self.page.screenshot(path="data/login_failed.png")
+        except Exception:
+            pass
+        raise RuntimeError(
+            f"Login failed. The router's page says: \"{message}\"\n"
+            "Check: 1) the username/password saved for this device, "
+            "2) log out of the router in your own browser (many routers allow only ONE login at a time), "
+            "3) some routers lock the login for a minute after wrong tries.\n"
+            "Screenshot saved in data/login_failed.png")
 
     def _log(self, message: str):
         # shows up in the black start.bat window, so you can follow what happens
