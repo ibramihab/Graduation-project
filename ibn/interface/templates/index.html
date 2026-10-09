@@ -137,7 +137,7 @@ async function load() {
       <td class="${esc(d.state)}">${esc(d.state || "?")}</td>
       <td><button class="secondary" onclick="history_('${esc(d.name)}')">History</button>
           <button class="secondary" onclick="edit('${esc(d.name)}')">Edit</button>
-          <button class="danger" onclick="del('${esc(d.name)}')">X</button></td></tr>`;
+          <button class="danger" onclick="del('${esc(d.name)}', this)">X</button></td></tr>`;
   }
   document.getElementById("devices").innerHTML = rows;
   window.devices = t.devices;
@@ -161,8 +161,17 @@ async function addLink() {
   show(await post("/api/links", {a: document.getElementById("l-a").value, b: document.getElementById("l-b").value}));
   load();
 }
-async function del(name) {
-  if (confirm("Delete " + name + "?")) { await fetch("/api/devices/" + name, {method: "DELETE"}); load(); }
+// First click: the button asks "Sure?". Second click (within 3 seconds): delete.
+// (No pop-up dialog, because browsers can block those.)
+async function del(name, button) {
+  if (!button.dataset.sure) {
+    button.dataset.sure = "1";
+    button.textContent = "Sure?";
+    setTimeout(() => { delete button.dataset.sure; button.textContent = "X"; }, 3000);
+    return;
+  }
+  await fetch("/api/devices/" + encodeURIComponent(name), {method: "DELETE"});
+  load();
 }
 async function history_(name) { show(await get("/api/devices/" + name + "/history")); }
 async function discover() {
