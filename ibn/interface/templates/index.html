@@ -42,7 +42,8 @@
   <section>
     <h2>Network topology</h2>
     <div id="graph"></div>
-    <p style="font-size:13px;margin:4px 0">Drag boxes to arrange them (your layout is remembered). Click a line to select a link.</p>
+    <p style="font-size:13px;margin:4px 0">Drag boxes to arrange them, scroll to zoom, drag the background to move (all remembered). Click a line to select a link.</p>
+    <button class="secondary" onclick="centerView()">Center view</button>
     <button id="remove-link" class="danger" style="display:none" onclick="removeLink()"></button>
     <div class="row">
       <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
@@ -151,6 +152,14 @@ function savedPositions() {
 function savePositions() {
   try { localStorage.setItem("ibn-positions", JSON.stringify(network.getPositions())); } catch (e) {}
 }
+// The zoom level and the part of the picture you look at are remembered too.
+function savedView() {
+  try { return JSON.parse(localStorage.getItem("ibn-view") || "null"); } catch (e) { return null; }
+}
+function saveView() {
+  try { localStorage.setItem("ibn-view", JSON.stringify({position: network.getViewPosition(), scale: network.getScale()})); } catch (e) {}
+}
+function centerView() { network.fit(); setTimeout(saveView, 600); }
 
 async function load() {
   const t = await get("/api/topology");
@@ -176,8 +185,13 @@ async function load() {
   if (!network) {  // first time: create the picture
     nodesData = new vis.DataSet(nodes);
     edgesData = new vis.DataSet(edges);
-    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData}, {});
-    network.on("dragEnd", savePositions);
+    const view = savedView();
+    // fit:false = don't jump back to the default view when the picture is drawn
+    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData},
+                              view ? {physics: {stabilization: {fit: false}}} : {});
+    if (view) network.moveTo({...view, animation: false});
+    network.on("dragEnd", () => { savePositions(); saveView(); });  // moving a box or the whole picture
+    network.on("zoom", saveView);
     network.on("stabilized", savePositions);
     network.on("selectEdge", e => { selectedLink = edgesData.get(e.edges[0]); showLinkButton(); });
     network.on("deselectEdge", () => { selectedLink = null; showLinkButton(); });
@@ -234,7 +248,7 @@ async function whatIfDown() {
 async function findLinks() {
   say("Logging in to the devices... (can take a minute)");
   const r = await post("/api/discover-links");
-  load();
+  await load();
   if (r.error) return say(`<span class="error">${esc(r.error)}</span>`);
   say(`<span class="ok">Done: ${r.links} links in the graph, interface IPs saved.</span>` +
       (r.errors.length ? `<br><span class="error">Problems:</span><br>` + r.errors.map(esc).join("<br>") : ""));
