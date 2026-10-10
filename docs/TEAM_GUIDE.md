@@ -3,6 +3,11 @@
 How the four of us (Ebraam, Asmaa, Menna, Heba) work on this project together without
 breaking each other's work. No Git experience needed.
 
+> **Our main rule: Claude writes the code, not us.** Each of us asks Claude (Claude Code)
+> for changes. Claude edits the files, runs the tests, commits and pushes to **our own
+> branch** on GitHub. On our laptops we only **download and run** the project
+> (`update.bat` + `start.bat`). We edit by hand in VS Code only in rare cases (section 4C).
+
 ---
 
 ## 1. Start here (first day)
@@ -22,7 +27,8 @@ breaking each other's work. No Git experience needed.
 4. Double-click **`start.bat`**. The first time it installs the libraries and opens
    `.env` in Notepad. Fill it in (see section 8 for the AI), save, run `start.bat` again,
    and open http://localhost:5000.
-5. Open the folder in VS Code: **File → Open Folder → Graduation-project**.
+5. *(Optional)* Open the folder in VS Code to **read** the code:
+   **File → Open Folder → Graduation-project**.
 
 ### No lab? No AI? You can still work
 - **No EVE-NG lab:** add devices with vendor **`simulated`** (a fake device in memory),
@@ -70,36 +76,41 @@ heba        ●──●──●──
 
 ## 4. Daily workflow
 
-### Every time you start working: get the newest `main` into your branch
-VS Code: bottom-left shows your branch name (make sure it's yours). Then:
-```
-git checkout <your-name>
-git pull                      # your branch from GitHub
-git merge origin/main         # bring in what others already merged into main
-```
-(`git pull` also downloads the newest `main`, so `origin/main` is up to date.)
-Do this **often** (every day you work): small updates = small or no conflicts.
+### 4A. Asking Claude for a change (the normal way)
+1. Open a **Claude Code** session on the repo `ibramihab/Graduation-project`, starting from
+   **your branch** (e.g. `asmaa`).
+2. First message, for example:
+   > *"I'm Asmaa. I work on the Intent layer (`ibn/intent/`), on branch `asmaa`.
+   > Task: add 5 more examples for ACLs to the Cisco vendor file."*
+3. Claude (following `CLAUDE.md`) will:
+   - bring the newest `main` into your branch first (and fix conflicts if there are any),
+   - make the change **only in your layer**, or ask you first if it needs another layer,
+   - run the tests, add a `CHANGELOG.md` line,
+   - commit and **push to your branch**, and tell you which files it changed.
+   (If Claude says it can only push to a `claude/...` branch, ask it to open a Pull Request
+   from that branch **into your branch**, then merge it on GitHub.)
+4. **Only one Claude session per branch at a time.** Two sessions changing the same branch at
+   once can overwrite each other.
 
-### While working: commit and push
-- **VS Code buttons:** Source Control tab (left side, the branch icon) → write a message
-  (e.g. *"Validation: check IP conflicts"*) → **Commit** → **Sync Changes** (push).
-- **Or commands:**
-  ```
-  git add .
-  git commit -m "Validation: check IP conflicts"
-  git push
-  ```
-Commit small steps with clear messages. Pushing often = your work is backed up on GitHub.
+### 4B. Trying the change on your laptop
+1. Double-click **`update.bat`** (downloads the newest version of **your** branch).
+2. Double-click **`start.bat`** and test it in the browser.
+3. Something wrong? Tell Claude what you saw (a screenshot helps) and it fixes it.
 
-### When a feature is finished: Pull Request into `main`
-1. Run the tests: `venv\Scripts\python -m pytest` → all must pass.
-2. Push your branch.
-3. On GitHub: **Pull requests → New pull request → base: `main` ← compare: `<your-name>`**.
-4. Write what you changed and why → **Create pull request**.
-5. GitHub runs the tests automatically (✅ or ❌ on the PR page; see section 9).
-6. A teammate looks at the changes (Files changed tab), comments or approves.
-7. Click **Merge pull request**. Tell the team in your group chat: *"merged X into main"*.
-8. Everyone then runs `git merge origin/main` on their own branch (see above).
+### 4C. Editing by hand in VS Code (rare cases only)
+1. **First** run `update.bat` (start from the newest version).
+2. Edit, then Source Control tab → message → **Commit** → **Sync Changes** (push).
+3. Tell Claude in your next session: *"I changed X by hand"*.
+- ⚠️ Never leave hand edits uncommitted: `update.bat` can't download while your files have
+  unsaved Git changes, and it will show an error.
+
+### 4D. When a feature is finished: into `main`
+1. Ask Claude: *"Open a Pull Request from `asmaa` into `main`, describing what changed."*
+2. GitHub runs the tests automatically on the PR (✅ or ❌, section 9).
+3. A teammate opens the PR on GitHub → **Files changed** → looks → **Approve**.
+4. Someone clicks **Merge pull request**. (A person always does the merge, not Claude.)
+5. Write in the group chat: *"merged X into main"*. Everyone's next Claude session will
+   bring it into their branch automatically (step 4A.3).
 
 ---
 
@@ -154,9 +165,10 @@ uses it in the same PR.
   their version
   >>>>>>> origin/main
   ```
-- **To fix it in VS Code:** open the file → click **Resolve in Merge Editor** → choose
-  *Accept Current*, *Accept Incoming*, or both → **Complete Merge** → commit → push.
-  Or ask Claude: *"I have a merge conflict in X, help me resolve it keeping both changes."*
+- **Who fixes it:** Claude, when it brings `main` into your branch at the start of a
+  session. It keeps both changes when possible and asks you if they really contradict.
+  (By hand in VS Code: open the file → **Resolve in Merge Editor** → choose → **Complete
+  Merge** → commit → push.)
 - **No conflict ≠ no bug.** After every merge, run the tests. They check that the layers
   still work together.
 
@@ -191,8 +203,9 @@ and every Pull Request. You see a ✅ or ❌ next to the commit and on the PR pa
 - Start each session with one sentence, for example:
   > *"I'm Menna. I work on the Validation and Control layers only (`ibn/validation/`,
   > `ibn/control/`), on branch `menna`. Don't edit other layers without asking me."*
-- Ask Claude to tell you **which files it changed** and to add a `CHANGELOG.md` line.
-- Before you push, look at the changes yourself (Source Control tab → click each file).
+- Claude tells you **which files it changed**. Read its summary, and if a change touches
+  a shared file or a contract, tell the group.
+- You can see exactly what changed on GitHub: your branch → **Commits** → click a commit.
 
 ---
 
@@ -226,10 +239,11 @@ and every Pull Request. You see a ✅ or ❌ next to the commit and on the PR pa
 
 ---
 
-## 12. Checklist before opening a PR
+## 12. Checklist before asking for a PR into `main`
 
-- [ ] I'm on **my** branch, and I merged the newest `main` into it.
-- [ ] `python -m pytest` passes (and I added a test for my new feature).
+- [ ] My branch has the newest `main` in it (Claude does this at the start of each session).
+- [ ] The tests pass (✅ on my branch on GitHub), and there's a test for the new feature.
+- [ ] I tried it on my laptop with `update.bat` + `start.bat`.
 - [ ] I only changed files in **my layer** (or told the team about shared files).
 - [ ] I didn't change a **contract** (section 6) without agreeing with the team.
 - [ ] I added a line to `CHANGELOG.md`.

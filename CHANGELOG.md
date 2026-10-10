@@ -7,6 +7,10 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Team setup: Claude does the editing
+- 🟡 `docs/TEAM_GUIDE.md` + `CLAUDE.md`: the daily workflow is now "ask Claude → Claude edits,
+  tests, pushes to your branch → you run `update.bat` + `start.bat`". Hand edits only rarely.
+
 ### Team setup
 - 🟢 **`docs/TEAM_GUIDE.md`**: how the 4 of us work together (setup, branches, Pull Requests,
   layer owners, contracts, conflicts, AI options, ideas per layer, PR checklist).
