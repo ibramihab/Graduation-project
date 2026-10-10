@@ -31,6 +31,16 @@ This is a 4-person graduation project: a small, layered **Intent-Based Networkin
    Add a test for new behavior in `tests/test_ibn.py`.
 5. **Git:** work on the teammate's own branch (`ebraam`, `asmaa`, `menna`, `heba`), never
    commit directly to `main`. Changes reach `main` through a Pull Request.
+   - **Teammates don't edit code by hand: you do all the editing for them.** They are
+     beginners at Git; do the Git work yourself and explain it in plain words.
+   - **At the start of a session:** get the newest `main` into their branch
+     (`git fetch origin` + `git merge origin/main`), resolve any conflicts (keep both
+     sides when possible, ask the user if they really contradict), run the tests.
+   - **At the end of each change:** run the tests, commit, push to their branch, and list
+     the files you changed. If you can only push to a `claude/...` branch, say so and
+     offer a Pull Request into their branch.
+   - Open a Pull Request into `main` only when the user asks. Never merge it yourself:
+     a teammate reviews and merges on GitHub.
 6. Add one line per change to `CHANGELOG.md` (newest first, 🟢 new / 🟡 changed / 🔴 removed),
    and tell the user which files you changed.
 7. Keep it simple: the code is meant to be readable by beginners. Short functions,
