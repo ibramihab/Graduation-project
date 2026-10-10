@@ -1,0 +1,19 @@
+# Runs the tests on GitHub's servers for every push and every Pull Request.
+# The result (green check or red X) is shown next to the commit / on the PR page.
+# No AI, no lab and no Neo4j are needed: the tests use a fake AI and fake devices.
+name: tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements.txt
+      - run: python -m pytest -q

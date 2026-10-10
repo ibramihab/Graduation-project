@@ -7,6 +7,14 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Team setup
+- 🟢 **`docs/TEAM_GUIDE.md`**: how the 4 of us work together (setup, branches, Pull Requests,
+  layer owners, contracts, conflicts, AI options, ideas per layer, PR checklist).
+- 🟢 **`CLAUDE.md`**: team rules that Claude Code reads automatically in every session.
+- 🟢 **`.github/workflows/tests.yml`**: GitHub runs the tests on every push and Pull Request.
+- 🟡 `README.md`: link to the team guide.
+- Branches on GitHub: `main` (official version) + `ebraam`, `asmaa`, `menna`, `heba`.
+
 ### Readable device history
 - 🟡 `ibn/interface/templates/index.html`: the **History** button shows one card per change
   (newest first: ✅/❌/🔍, time, your request, commands) instead of raw JSON.
