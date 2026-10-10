@@ -23,6 +23,10 @@
   .up { color: #1e8449; font-weight: bold; } .down { color: #c0392b; font-weight: bold; }
   #graph { height: 320px; border: 1px solid #ddd; border-radius: 6px; }
   .row { display: flex; gap: 6px; } .row > * { flex: 1; }
+  .hist { border-left: 4px solid #1e8449; background: #fafafa; padding: 8px 12px; margin: 8px 0; border-radius: 4px; }
+  .hist.failed { border-color: #c0392b; } .hist.check { border-color: #607d8b; }
+  .hist .when { color: #666; font-size: 13px; } .hist .tag { font-size: 12px; font-weight: bold; margin-left: 6px; }
+  .hist ul { margin: 4px 0; font-family: monospace; } .hist pre { font-size: 12px; }
   @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
 </style>
 </head>
@@ -287,7 +291,28 @@ async function del(name, button) {
   await fetch("/api/devices/" + encodeURIComponent(name), {method: "DELETE"});
   load();
 }
-async function history_(name) { show(await get("/api/devices/" + name + "/history")); }
+// History of one device, as readable cards (newest first). The device output is folded away.
+async function history_(name) {
+  const changes = (await get("/api/devices/" + name + "/history")).reverse();
+  let html = `<h3>History of ${esc(name)} (${changes.length} change${changes.length === 1 ? "" : "s"})</h3>`;
+  if (!changes.length) html += "<p>No changes yet.</p>";
+  for (const c of changes) {
+    const check = c.type === "check";
+    const icon = !c.success ? "❌" : check ? "🔍" : "✅";
+    const kind = !c.success ? "failed" : check ? "check" : "";
+    const statuses = (c.results || []).map(r => r.status).join(", ");
+    const when = c.time ? new Date(c.time).toLocaleString() : "";
+    const output = (c.results || []).map(r => `[${r.status}]\n${r.output}`).join("\n\n");
+    html += `<div class="hist ${kind}">
+      ${icon} <span class="when">${esc(when)}</span><span class="tag">${check ? "CHECK" : "CONFIG"}</span>
+      ${statuses ? `<span class="when"> (${esc(statuses)})</span>` : ""}
+      <div><i>"${esc(c.intent)}"</i></div>
+      <ul>${(c.commands || []).map(cmd => `<li>${esc(cmd)}</li>`).join("")}</ul>
+      ${output ? `<details><summary>Show device output</summary><pre>${esc(output)}</pre></details>` : ""}
+    </div>`;
+  }
+  document.getElementById("msg").innerHTML = html;
+}
 async function discover() {
   document.getElementById("msg").innerHTML = "Scanning... (can take a minute)";
   show(await post("/api/discover", {subnet: document.getElementById("subnet").value})); load();

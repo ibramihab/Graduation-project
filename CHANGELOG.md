@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Readable device history
+- 🟡 `ibn/interface/templates/index.html`: the **History** button shows one card per change
+  (newest first: ✅/❌/🔍, time, your request, commands) instead of raw JSON.
+  The device output is folded under "Show device output". Nothing else changed.
+
 ### Topology view remembers zoom and position
 - 🟡 `ibn/interface/templates/index.html`: zoom and view position saved in the browser;
   new **Center view** button.
