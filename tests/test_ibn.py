@@ -223,7 +223,7 @@ def test_graph_api(kb):
 
 # ---- vendor profiles (ibn/vendors/) ----
 from ibn.infrastructure.drivers import DRIVERS  # noqa: E402
-from ibn.infrastructure.drivers.netmiko_cli import NetmikoDriver  # noqa: E402
+from ibn.infrastructure.drivers.cli import CliDriver  # noqa: E402
 from ibn.intent.translator import _clean  # noqa: E402
 from ibn.vendors import VENDORS, get_vendor  # noqa: E402
 
@@ -299,7 +299,7 @@ def test_driver_uses_the_vendor_error_markers():
     class FakeConn:
         def send_config_set(self, commands):
             return "Command fail. Return code -61"
-    driver = NetmikoDriver({"name": "FW1", "ip": "1.1.1.1", "vendor": "fortigate"})
+    driver = CliDriver({"name": "FW1", "ip": "1.1.1.1", "vendor": "fortigate"})
     driver.profile, driver.conn = get_vendor("fortigate"), FakeConn()
     with pytest.raises(RuntimeError):
         driver.send_config(["config system interface"])

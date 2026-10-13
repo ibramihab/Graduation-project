@@ -187,7 +187,7 @@ Each way of talking to a device is a **driver** class with the same 4 methods
 
 | vendor value | Driver | How |
 |---|---|---|
-| `cisco_ios`, `cisco_nxos`, `arista_eos`, `huawei`, `fortigate`, `mikrotik_routeros` | `netmiko_cli.py` | SSH or Telnet with the [Netmiko](https://github.com/ktbyers/netmiko) library |
+| `cisco_ios`, `cisco_nxos`, `arista_eos`, `huawei`, `fortigate`, `mikrotik_routeros` | `cli.py` | SSH or Telnet with the [Netmiko](https://github.com/ktbyers/netmiko) library |
 | `simulated` | `simulated.py` | A fake device in memory, for learning and tests |
 
 ### Vendor profiles: one file per vendor (`ibn/vendors/`)
@@ -219,7 +219,7 @@ tried, but a local AI on a laptop was too slow for it). A new driver can add the
 
 That's all: the driver, the validation and the web drop-down pick it up automatically.
 
-Juniper needs a `commit` after the commands: make a small `JunosDriver(NetmikoDriver)`
+Juniper needs a `commit` after the commands: make a small `JunosDriver(CliDriver)`
 that overrides `send_config` to call `self.conn.commit()`, and register it in
 `drivers/__init__.py`.
 

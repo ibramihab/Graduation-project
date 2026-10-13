@@ -25,6 +25,9 @@ This is a 4-person graduation project: a small, layered **Intent-Based Networkin
    - the `KnowledgeBase` methods (`ibn/knowledge/base.py`)
    - the `VendorProfile` fields (`ibn/vendors/base.py`)
    - the `/api/...` URLs (`ibn/interface/web.py`)
+   - the device fields saved in the knowledge base (`name`, `ip`, `vendor`, `protocol`,
+     `state`, `interfaces`, ...): other layers read them by name
+   **Adding** new methods, fields or URLs is fine; **renaming or removing** them breaks others.
 3. **Shared files** (`index.html`, `web.py`, `pipeline.py`, `requirements.txt`, `CHANGELOG.md`):
    keep edits small and only where needed.
 4. **Run the tests before every commit:** `python -m pytest` (no AI, lab or Neo4j needed).

@@ -148,7 +148,7 @@ Graduation-project/
 │   │   └── drivers/
 │   │       ├── __init__.py        [CORE]     the vendor → driver list
 │   │       ├── base.py            [CORE]     the rules every driver must follow
-│   │       ├── netmiko_cli.py     [CORE]     SSH/Telnet devices (Cisco, Arista, Huawei...)
+│   │       ├── cli.py             [CORE]     SSH/Telnet devices (Cisco, Arista, Huawei...)
 │   │       └── simulated.py       [OPTIONAL] fake device for practice and tests
 │   │
 │   └── knowledge/                 SHARED COMPONENT
@@ -353,11 +353,11 @@ The control layer only calls these names, so it never needs to know if it's talk
 to Cisco over SSH, a simulated device, or (in the future) an SDN controller.
 
 **`drivers/__init__.py`**: **the registry**. A dictionary `vendor name → driver class`.
-Every vendor profile with a Netmiko type gets `NetmikoDriver` automatically.
+Every vendor profile with a Netmiko type gets `CliDriver` automatically.
 `get_driver(device)` looks up the device's vendor here.
 👉 Adding a new *method* (API, NETCONF, SDN) = one line here.
 
-**`drivers/netmiko_cli.py`**: every CLI device, via the Netmiko library (which knows
+**`drivers/cli.py`**: every CLI device, via the Netmiko library (which knows
 100+ vendors). It reads the vendor profile for the Netmiko type, the "show config" and
 "show interfaces" commands and the error texts. SSH or Telnet (`protocol` field).
 Detects device errors (`% Invalid input`, `Error:`, `Command fail`...) so a rejected
@@ -414,7 +414,7 @@ Ours do one of three things:
 | `ibn/__init__.py`, `interface/__init__.py`, `infrastructure/__init__.py` | only a comment | just marks the folder as part of the program |
 | `intent/__init__.py`, `validation/__init__.py`, `control/__init__.py` | e.g. `from .translator import translate` | **shortcut**: `from ibn.intent import translate` instead of `from ibn.intent.translator import translate` |
 | `knowledge/__init__.py` | `get_knowledge_base()` | **decision**: JSON-file storage or Neo4j, based on `KB_BACKEND` in `.env` |
-| `drivers/__init__.py` | `DRIVERS` + `get_driver()` | **vendor list**: `cisco_ios → NetmikoDriver`, `simulated → SimulatedDriver` |
+| `drivers/__init__.py` | `DRIVERS` + `get_driver()` | **vendor list**: `cisco_ios → CliDriver`, `simulated → SimulatedDriver` |
 
 Never delete them.
 
@@ -592,7 +592,7 @@ The **minimal core** (what the system can't run without) is:
 run.py, requirements.txt, .env, ibn/settings.py, ibn/pipeline.py,
 interface/ (web.py, index.html, vis-network.min.js), intent/ (llm.py, translator.py),
 validation/validator.py, vendors/ (base.py, __init__.py, your vendors), control/controller.py,
-drivers/ (__init__.py, base.py, netmiko_cli.py), knowledge/ (base.py + ONE of the two storages)
+drivers/ (__init__.py, base.py, cli.py), knowledge/ (base.py + ONE of the two storages)
 ```
 
 | You could remove | Saves | You lose |
@@ -705,7 +705,7 @@ Add methods to `knowledge/base.py`, implement them in both storages, fill them f
 |---|---|
 | **Python package** | a folder with `__init__.py`, so its files can be imported |
 | **import** | using code from another file: `from ibn.intent import translate` |
-| **class / method** | a class groups data + functions (methods); e.g. `NetmikoDriver` with `connect()` |
+| **class / method** | a class groups data + functions (methods); e.g. `CliDriver` with `connect()` |
 | **contract / interface (ABC)** | a class that only lists the methods others must write (`Driver`, `KnowledgeBase`) |
 | **Flask** | a small Python library to build web servers |
 | **API** | the list of URLs the page uses to talk to the server |

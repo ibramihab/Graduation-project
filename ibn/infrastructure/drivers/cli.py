@@ -1,4 +1,5 @@
-"""Traditional CLI devices over SSH or Telnet, using the Netmiko library.
+"""CLI devices: the ones you control by typing commands, over SSH or Telnet.
+Uses the Netmiko library to log in and send the commands.
 
 Netmiko already knows 100+ vendors. Everything vendor-specific (Netmiko type, which
 command shows the config, how errors look...) comes from the vendor profile in
@@ -12,7 +13,7 @@ from ...vendors import get_vendor
 from .base import Driver
 
 
-class NetmikoDriver(Driver):
+class CliDriver(Driver):
     def connect(self):
         self.profile = get_vendor(self.device["vendor"])
         device_type = self.profile.netmiko_type
