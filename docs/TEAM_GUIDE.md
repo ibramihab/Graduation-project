@@ -146,6 +146,10 @@ same, you can rewrite everything **inside** your layer and nobody else is affect
 | **Knowledge base methods**: `add_device`, `get_device`, `list_links`, `record_change`, ... | everyone | `ibn/knowledge/base.py` |
 | **Vendor profile fields** | intent, validation, drivers | `ibn/vendors/base.py` |
 | **API URLs**: `/api/intent`, `/api/approve/<id>`, `/api/devices`, ... | web page ↔ server | `ibn/interface/web.py` |
+| **Device fields**: `name`, `ip`, `vendor`, `protocol`, `state`, `interfaces`, ... | every layer reads them | `ibn/knowledge/` |
+
+**Adding** a new method, field or URL is always fine. **Renaming or removing** one breaks the
+others, even when Git merges without any conflict.
 
 Need to change one? **Agree with the team first**, then change it **and** every place that
 uses it in the same PR.
@@ -206,6 +210,48 @@ and every Pull Request. You see a ✅ or ❌ next to the commit and on the PR pa
 - Claude tells you **which files it changed**. Read its summary, and if a change touches
   a shared file or a contract, tell the group.
 - You can see exactly what changed on GitHub: your branch → **Commits** → click a commit.
+
+### Prompts to copy into Claude
+Replace `<Name>`, `<branch>` and `<layer>` with yours.
+
+**1. First message of every session**
+> I'm <Name>. I work on the <layer> layer (<folders>), on branch `<branch>`.
+> Before anything else: read `CLAUDE.md` and `docs/TEAM_GUIDE.md`, merge the latest `main`
+> into my branch, run the tests, and tell me the result in simple words.
+> Only edit files in my layer. If my task needs a change in another layer, in a shared file,
+> or in a contract between layers, stop and explain it to me first.
+> After each change: run the tests, add a CHANGELOG line, commit, push to `<branch>`, and list
+> the files you changed in simple words.
+
+**2. Before a new task (plan first, then code)**
+> My task: <describe it>. Before writing code, explain your plan in simple words: which files
+> you will change, whether any contract or shared file is affected, and how you will test it.
+> Wait for my OK.
+
+**3. A feature that needs a new button or API URL**
+> This feature needs the web page. Propose the API URL and the JSON it returns, so I can
+> share it with the Interface owner. Don't edit `index.html` yourself.
+
+**4. Before asking for a PR into `main`**
+> Check my branch is ready: merge the latest `main`, run the tests, confirm no contract changed,
+> and summarize everything my branch changes compared to `main` in simple words.
+> Then open a Pull Request from `<branch>` into `main`.
+
+**5. After a teammate merged into `main`**
+> Merge the latest `main` into my branch, fix conflicts keeping both sides, run the tests, and
+> tell me what came in from the others.
+
+**6. Something broke**
+> After merging, <what doesn't work>. The error is: <paste it>. Find which change caused it
+> (compare with the last version that worked) and fix it without undoing anyone's work.
+
+**One extra line for your layer** (add it to prompt 1):
+| Layer | Add this |
+|---|---|
+| Intent (AI) | *The plan JSON shape (`PLAN_SCHEMA`) must not change. Work inside `ibn/intent/` and the `ai_hints` of the vendor files.* |
+| Validation + Control | *`validate()` must keep returning `{ok, errors, warnings}`, and `apply_plan()` its current result keys.* |
+| Infrastructure | *Driver methods (`drivers/base.py`) and vendor profile fields: add new ones, never rename or remove.* |
+| Interface + Knowledge | *Keep the existing `/api/...` URLs and knowledge base methods. New buttons only call URLs that exist; otherwise show "coming soon".* |
 
 ---
 

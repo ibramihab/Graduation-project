@@ -7,6 +7,15 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Clearer driver name + prompts for the team
+- 🟡 `ibn/infrastructure/drivers/netmiko_cli.py` → renamed to **`cli.py`**, class `NetmikoDriver`
+  → **`CliDriver`** ("devices you control by typing commands, over SSH or Telnet").
+  Updated where it's used: `drivers/__init__.py`, `tests/test_ibn.py`, `README.md`,
+  `docs/PROJECT_GUIDE.md`. Nothing else changed.
+- 🟡 `docs/TEAM_GUIDE.md`: ready-to-copy **prompts for Claude** (section 10), and device fields
+  added to the contracts (section 6).
+- 🟡 `CLAUDE.md`: device fields are a contract too; "add, don't rename".
+
 ### Team setup: Claude does the editing
 - 🟡 `docs/TEAM_GUIDE.md` + `CLAUDE.md`: the daily workflow is now "ask Claude → Claude edits,
   tests, pushes to your branch → you run `update.bat` + `start.bat`". Hand edits only rarely.
