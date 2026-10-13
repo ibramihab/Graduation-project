@@ -7,6 +7,14 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Dashboard look + Arabic text fixed
+- 🟡 `ibn/interface/templates/index.html`: new dashboard layout. Status tiles at the top
+  (devices, up, down, links, vendors), then 3 columns: request + plan | topology + results |
+  devices + tools. "Add device" and "Link two devices" fold away; device states are colored labels.
+- 🟡 Same file: Arabic mixed with English now shows in the right order (each text picks its
+  own direction automatically).
+- No other file changed: every button calls the same API URLs as before.
+
 ### Clearer driver name + prompts for the team
 - 🟡 `ibn/infrastructure/drivers/netmiko_cli.py` → renamed to **`cli.py`**, class `NetmikoDriver`
   → **`CliDriver`** ("devices you control by typing commands, over SSH or Telnet").
