@@ -7,6 +7,86 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### A device's own username is hidden too
+- 🟡 Like the password, a device's saved username is never sent to the page (`has_username` tells
+  it one exists). Edit shows ●●●●●● in the username box. Rules unchanged: leave the dots = keep it,
+  empty the box = use the `.env` username, type a new one = replace it.
+- Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py`.
+
+### Loading spinners + nicer "saved" message
+- 🟡 `ibn/interface/templates/index.html`: buttons that wait for the server (Make a plan, Approve,
+  Scan, Find links, Refresh up/down, Path, What-if, Critical devices, Save device, Link, Start a new
+  topology) show a small spinning circle and can't be clicked twice while working. The plan box
+  shows "The AI is writing the plan..." with a spinner.
+- 🟡 "Saved" and "linked" messages now show a white check mark in a green circle.
+
+### Refresh up/down: no false "down" after a device comes back
+- 🟡 `ibn/infrastructure/discovery.py`: sends 2 pings instead of 1 (the first one is often
+  dropped while the router re-learns the device's MAC address).
+- 🟡 Fix of the first version of this change: it looked for the text `TTL=` in ping's answer,
+  which Windows in some languages doesn't print, so every device showed "down". Now: ping
+  succeeded + `TTL=` → up; ping succeeded without `TTL=` → up only if the SSH/Telnet port answers
+  (this still filters out Windows' "Destination host unreachable").
+- `tests/test_ibn.py`: 1 new test.
+
+### Manual links: names are matched, errors are shown
+- 🟡 **Link two devices** now ignores CAPITALS and extra spaces (`r1 ` = `R1`). Before, a link
+  with a slightly different name was saved but never drawn, with no error.
+- 🟡 A name that doesn't exist (or the same device twice) shows an error in Results.
+- 🟡 Old broken links (to names that don't exist) are no longer sent to the page.
+- Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (1 new test).
+
+### Change only a device's password
+- 🟡 Edit a device → type only a new password → Save: the password changes and the username
+  stays (its own, or the `.env` one). Before, a device using the `.env` username lost the new
+  password. Emptying both boxes still goes back to the full `.env` login.
+- 🟡 The page only learns *whether* a password is saved (`has_password`, used for the hint in the
+  password box), never the password. (The login is not shown in the device table.)
+- Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (1 new test).
+
+### Device login fix + faster adding
+- 🟡 Editing a device and **emptying the username** now really removes its own login, so it
+  uses the one in `.env` again (before, the old username stayed). An empty password alone
+  still keeps the saved password. Name and IP are now required.
+- 🟡 **Save device / Link** show a green ✓ next to the button and clear the form for the next one;
+  you stay in Tools. Only an error opens the Results tab.
+- Files: `ibn/interface/web.py`, `index.html`, `ibn/knowledge/file_graph.py` (a field set to
+  None is removed), `ibn/knowledge/base.py` (docstring), `tests/test_ibn.py` (3 new tests).
+
+### Dashboard fits on one screen
+- 🟡 `ibn/interface/templates/index.html`: everything fits in the window, no page scrolling
+  (long lists scroll inside their own box). Right side has tabs: **Devices | Tools | Results**;
+  Results opens by itself when there's something new to show. Ring charts are now a full
+  circle at 100%. Small screens (under 1100 px) still get a normal scrolling page.
+
+### Dark "network monitor" dashboard
+- 🟡 `ibn/interface/templates/index.html`: new dark design. Top navigation bar; tiles for
+  routers / switches / firewalls / other devices / links / down; **Network health** and
+  **Devices by vendor** ring charts; larger topology; **Device inventory** table with a search box.
+  The device type is guessed from the vendor and name (only for display).
+- Only real data is shown (no traffic graphs: the project doesn't collect traffic yet).
+- No other file changed: every button calls the same API URLs as before.
+
+### Old topology data no longer sticks around
+- 🟢 **Start a new topology** button (Discovery card): deletes every device, link and history
+  entry, safely, while the program runs. New URL `POST /api/reset`.
+- 🟡 **Find links** now also **removes** links that are gone: only when both devices answered and
+  neither reports the other. Links added by hand ("Link two devices") are never removed.
+- 🟡 Deleting a device (**X**) now also deletes its history, so a new device with the same name
+  starts clean.
+- Files: `ibn/knowledge/base.py` (new `clear()`, `add_link(..., manual=False)`; links now also
+  have a `manual` field), `file_graph.py`, `neo4j_graph.py`, `ibn/infrastructure/discovery.py`,
+  `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (5 new tests), `docs/PROJECT_GUIDE.md`.
+- Nothing was renamed or removed: other layers keep working as before.
+
+### Dashboard look + Arabic text fixed
+- 🟡 `ibn/interface/templates/index.html`: new dashboard layout. Status tiles at the top
+  (devices, up, down, links, vendors), then 3 columns: request + plan | topology + results |
+  devices + tools. "Add device" and "Link two devices" fold away; device states are colored labels.
+- 🟡 Same file: Arabic mixed with English now shows in the right order (each text picks its
+  own direction automatically).
+- No other file changed: every button calls the same API URLs as before.
+
 ### Clearer driver name + prompts for the team
 - 🟡 `ibn/infrastructure/drivers/netmiko_cli.py` → renamed to **`cli.py`**, class `NetmikoDriver`
   → **`CliDriver`** ("devices you control by typing commands, over SSH or Telnet").

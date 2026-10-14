@@ -41,17 +41,24 @@ class Neo4jGraph(KnowledgeBase):
                   "OPTIONAL MATCH (d)-[:HAS_CHANGE]->(c:Change) DETACH DELETE d, c", name=name)
 
     # ---- links ----
-    def add_link(self, a, b):
+    def add_link(self, a, b, manual=False):
+        # once a link was added by hand it stays "manual"
         self._run("MATCH (a:Device {name: $a}), (b:Device {name: $b}) "
-                  "MERGE (a)-[:CONNECTED_TO]-(b)", a=a, b=b)
+                  "MERGE (a)-[r:CONNECTED_TO]-(b) "
+                  "SET r.manual = coalesce(r.manual, false) OR $manual", a=a, b=b, manual=manual)
 
     def delete_link(self, a, b):
         self._run("MATCH (:Device {name: $a})-[r:CONNECTED_TO]-(:Device {name: $b}) DELETE r", a=a, b=b)
 
     def list_links(self):
         # elementId(a) < elementId(b) so each link is returned once, not twice
-        return self._run("MATCH (a:Device)-[:CONNECTED_TO]-(b:Device) "
-                         "WHERE elementId(a) < elementId(b) RETURN a.name AS a, b.name AS b")
+        return self._run("MATCH (a:Device)-[r:CONNECTED_TO]-(b:Device) "
+                         "WHERE elementId(a) < elementId(b) "
+                         "RETURN a.name AS a, b.name AS b, coalesce(r.manual, false) AS manual")
+
+    # ---- start over ----
+    def clear(self):
+        self._run("MATCH (n) WHERE n:Device OR n:Change DETACH DELETE n")
 
     # ---- history ----
     def record_change(self, device_name, change):

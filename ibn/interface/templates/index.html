@@ -3,103 +3,280 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Simple IBN</title>
+<title>IBN Network Monitor</title>
 <!-- vis-network draws the topology graph (bundled in static/ so it works without internet) -->
 <script src="/static/vis-network.min.js"></script>
 <style>
-  body { font-family: system-ui, sans-serif; margin: 0; background: #f4f6f8; color: #222; }
-  header { background: #0b5345; color: white; padding: 12px 20px; }
-  main { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; padding: 16px; }
-  section { background: white; border-radius: 8px; padding: 16px; box-shadow: 0 1px 3px #0002; }
-  h2 { margin-top: 0; font-size: 18px; }
-  textarea, input, select { width: 100%; box-sizing: border-box; padding: 8px; margin: 4px 0; font: inherit; }
-  button { background: #0b5345; color: white; border: 0; padding: 8px 14px; border-radius: 6px; cursor: pointer; margin: 4px 4px 4px 0; }
-  button.secondary { background: #607d8b; }
-  button.danger { background: #c0392b; }
-  pre { background: #1e1e1e; color: #d4d4d4; padding: 10px; border-radius: 6px; overflow-x: auto; white-space: pre-wrap; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  td, th { border-bottom: 1px solid #ddd; padding: 6px; text-align: left; }
-  .error { color: #c0392b; } .warn { color: #b9770e; } .ok { color: #1e8449; }
-  .up { color: #1e8449; font-weight: bold; } .down { color: #c0392b; font-weight: bold; }
-  #graph { height: 320px; border: 1px solid #ddd; border-radius: 6px; }
-  .row { display: flex; gap: 6px; } .row > * { flex: 1; }
-  .hist { border-left: 4px solid #1e8449; background: #fafafa; padding: 8px 12px; margin: 8px 0; border-radius: 4px; }
-  .hist.failed { border-color: #c0392b; } .hist.check { border-color: #607d8b; }
-  .hist .when { color: #666; font-size: 13px; } .hist .tag { font-size: 12px; font-weight: bold; margin-left: 6px; }
-  .hist ul { margin: 4px 0; font-family: monospace; } .hist pre { font-size: 12px; }
-  @media (max-width: 900px) { main { grid-template-columns: 1fr; } }
+  /* ---------- colors (dark "network operations" theme) ---------- */
+  :root {
+    color-scheme: dark;
+    --page: #0d0d0d; --card: #1a1a19; --card-2: #222220; --line: rgba(255,255,255,0.10);
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --accent: #0ca30c;
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --error-text: #e66767;
+    /* chart colors: fixed order, checked for color-blind readability on --card */
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
+  }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; font-size: 14px; }
+  a { color: inherit; }
+
+  /* ---------- one screen: the page never scrolls, long lists scroll inside their box ---------- */
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { flex: 0 0 auto; background: #111110; border-bottom: 1px solid var(--line);
+            display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 44px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
+  .brand .logo { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 13px; }
+  .updated { margin-left: auto; color: var(--muted); font-size: 12px; }
+
+  .page { flex: 1; min-height: 0; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; flex: 0 0 auto; }
+  .main { flex: 1; min-height: 0; display: grid; gap: 12px;
+          grid-template-columns: minmax(270px, 1fr) minmax(340px, 1.6fr) minmax(330px, 1.2fr); }
+  .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+  .card.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .card.grow > .fill { flex: 1; min-height: 0; overflow: auto; }
+  .card h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-2);
+             display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
+  .card h2 .hint { font-weight: normal; color: var(--muted); font-size: 12px; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 0 0 auto; }
+
+  /* tabs on the right side */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: -4px 0 10px; flex: 0 0 auto; }
+  .tabs button { background: transparent; color: var(--ink-2); border-radius: 0; margin: 0; padding: 8px 12px;
+                 border-bottom: 2px solid transparent; }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .tab { display: none; } .tab.active { display: block; }
+  .tab h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 14px 0 4px; text-transform: uppercase; }
+  .tab h3:first-child { margin-top: 0; }
+
+  /* ---------- tiles ---------- */
+  .tile { display: flex; align-items: center; gap: 12px; }
+  .tile { padding: 10px 12px; }
+  .tile .icon { width: 36px; height: 36px; border-radius: 6px; background: #13301a; color: var(--good);
+                display: grid; place-items: center; flex: 0 0 auto; }
+  .tile .icon svg { width: 22px; height: 22px; }
+  .tile .label { color: var(--muted); font-size: 12px; }
+  .tile .num { font-size: 22px; font-weight: 700; line-height: 1.2; }
+  .tile.down .icon { background: #3a1616; color: var(--critical); }
+
+  /* ---------- donut charts ---------- */
+  .donut-wrap { display: flex; align-items: center; gap: 16px; }
+  .donut { position: relative; width: 92px; height: 92px; flex: 0 0 auto; }
+  .donut svg { width: 92px; height: 92px; transform: rotate(-90deg); }
+  .donut .center { position: absolute; inset: 0; display: grid; place-items: center;
+                   font-size: 22px; font-weight: 700; }
+  .donut circle.seg { transition: stroke-width .15s; cursor: default; }
+  .donut circle.seg:hover { stroke-width: 18; }
+  .legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 140px; }
+  .legend li { display: flex; align-items: center; gap: 8px; padding: 3px 0; color: var(--ink-2); }
+  .legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+  .legend .val { margin-left: auto; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .legend .pct { color: var(--muted); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ---------- forms + buttons ---------- */
+  textarea, input, select { width: 100%; padding: 8px 10px; margin: 4px 0; font: inherit; color: var(--ink);
+                            background: #111110; border: 1px solid var(--line); border-radius: 4px; }
+  textarea:focus, input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  ::placeholder { color: var(--muted); }
+  button { background: var(--accent); color: #fff; border: 0; padding: 8px 14px; border-radius: 4px;
+           cursor: pointer; margin: 4px 4px 4px 0; font: inherit; }
+  button:hover { filter: brightness(1.15); }
+  button.secondary { background: #2e2e2b; color: var(--ink); border: 1px solid var(--line); }
+  button.outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.danger { background: var(--critical); }
+  button.small { padding: 3px 8px; font-size: 12px; margin: 1px; }
+  .big { width: 100%; padding: 10px; font-size: 15px; }
+  .inline { display: flex; gap: 6px; align-items: center; } .inline > * { flex: 1; } .inline > button { flex: 0 0 auto; }
+  details > summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
+
+  /* ---------- tables + text ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-align: left; padding: 8px 6px;
+       border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
+  tr:hover td { background: var(--card-2); }
+  td b { color: var(--ink); font-weight: 600; }
+  .pill { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.up { color: var(--good); } .pill.up::before { background: var(--good); }
+  .pill.down { color: var(--error-text); } .pill.down::before { background: var(--critical); }
+  .pill.unknown { color: var(--muted); }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+  pre { background: #0b0b0a; color: #d9d8d0; border: 1px solid var(--line); padding: 10px; border-radius: 4px;
+        overflow-x: auto; white-space: pre-wrap; direction: ltr; text-align: left; font-size: 13px; }
+  .error { color: var(--error-text); } .warn { color: var(--warning); } .ok { color: var(--good); }
+  .small-text { font-size: 12px; color: var(--muted); margin: 6px 0; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  #graph { flex: 1; min-height: 200px; border: 1px solid var(--line); border-radius: 4px;
+           background: radial-gradient(circle at 50% 40%, #1f2a22 0%, #121211 70%); }
+  #msg:empty::before { content: "Results of discovery, graph questions and device history appear here."; color: var(--muted); font-size: 13px; }
+  #plan:empty::before { content: "Type what you want, then click Make a plan. English or Arabic both work."; color: var(--muted); font-size: 13px; }
+
+  /* a small spinning circle inside a button while its work is running */
+  button.busy { opacity: .85; cursor: progress; }
+  button.busy::after { content: ""; display: inline-block; width: 12px; height: 12px; margin-left: 8px;
+                       vertical-align: -2px; border: 2px solid currentColor; border-right-color: transparent;
+                       border-radius: 50%; animation: spin .7s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
+  .spinner { display: inline-block; width: 14px; height: 14px; margin-right: 8px; vertical-align: -2px;
+             border: 2px solid var(--accent); border-right-color: transparent; border-radius: 50%;
+             animation: spin .7s linear infinite; }
+
+  /* "saved" message: a green circle with a white check mark */
+  .saved { display: inline-flex; align-items: center; gap: 6px; color: var(--ink); font-size: 13px;
+           vertical-align: middle; animation: pop .25s ease-out; }
+  .saved .check { width: 20px; height: 20px; border-radius: 50%; background: var(--good);
+                  display: grid; place-items: center; flex: 0 0 auto; }
+  .saved .check svg { width: 12px; height: 12px; }
+  @keyframes pop { from { transform: scale(.6); opacity: 0; } to { transform: scale(1); opacity: 1; } }
+
+  /* Arabic + English mixed text: each block picks its own direction from its first letters */
+  [dir="auto"] { unicode-bidi: plaintext; }
+
+  .hist { border-left: 3px solid var(--good); background: #111110; padding: 8px 12px; margin: 8px 0; border-radius: 4px; }
+  .hist.failed { border-color: var(--critical); } .hist.check { border-color: var(--s1); }
+  .hist .when { color: var(--muted); font-size: 12px; } .hist .tag { margin-left: 6px; }
+  .hist ul { margin: 4px 0; font-family: monospace; direction: ltr; }
+
+  /* small screens: go back to a normal scrolling page */
+  @media (max-width: 1100px) {
+    body { overflow: auto; height: auto; } .page { flex: none; }
+    .main { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(3, 1fr); }
+    .card.grow { min-height: 380px; } #graph { height: 380px; }
+  }
+  @media (max-width: 600px) { .tiles { grid-template-columns: repeat(2, 1fr); } .charts { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
-<header><b>Simple IBN</b> &mdash; say what you want, check it, approve it</header>
-<main>
 
-  <!-- 1. INTENT: type -> plan -> approve -->
-  <section>
-    <h2>1. What do you want?</h2>
-    <textarea id="intent" rows="3" placeholder="e.g. Create VLAN 10 named Sales on SW1"></textarea>
-    <button onclick="sendIntent()">Make a plan</button>
-    <div id="plan"></div>
+<div class="topbar">
+  <div class="brand"><span class="logo">IBN</span> Network Monitor</div>
+  <span class="updated" id="updated"></span>
+</div>
+
+<main class="page">
+
+  <!-- tiles (filled by updateStats) -->
+  <section class="tiles">
+    <div class="card tile"><div class="icon" data-icon="router"></div><div><div class="label">Routers</div><div class="num" id="t-router">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="switch"></div><div><div class="label">Switches</div><div class="num" id="t-switch">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="firewall"></div><div><div class="label">Firewalls</div><div class="num" id="t-firewall">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="other"></div><div><div class="label">Other devices</div><div class="num" id="t-other">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="link"></div><div><div class="label">Links</div><div class="num" id="t-links">0</div></div></div>
+    <div class="card tile down"><div class="icon" data-icon="alert"></div><div><div class="label">Down</div><div class="num" id="t-down">0</div></div></div>
   </section>
 
-  <!-- TOPOLOGY -->
-  <section>
-    <h2>Network topology</h2>
-    <div id="graph"></div>
-    <p style="font-size:13px;margin:4px 0">Drag boxes to arrange them, scroll to zoom, drag the background to move (all remembered). Click a line to select a link.</p>
-    <button class="secondary" onclick="centerView()">Center view</button>
-    <button id="remove-link" class="danger" style="display:none" onclick="removeLink()"></button>
-    <div class="row">
-      <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
-      <button class="secondary" onclick="discover()">Scan (ping)</button>
-    </div>
-    <button class="secondary" onclick="findLinks()">Find links &amp; IPs (CDP)</button>
-    <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
-    <h2 style="margin-top:16px">Ask the network graph</h2>
-    <div class="row">
-      <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
-      <button class="secondary" onclick="findPath()">Path</button>
-    </div>
-    <div class="row">
-      <input id="g-dev" placeholder="Device (R2)">
-      <button class="secondary" onclick="whatIfDown()">What if it goes down?</button>
-    </div>
-    <button class="secondary" onclick="criticalDevices()">Critical devices</button>
-    <div id="msg"></div>
-  </section>
+  <section class="main">
 
-  <!-- DEVICES -->
-  <section>
-    <h2>Devices</h2>
-    <table id="devices"></table>
-  </section>
+    <!-- LEFT: request -> plan -> approve -->
+    <div class="col">
+      <div class="card">
+        <h2>What do you want?</h2>
+        <textarea id="intent" rows="3" dir="auto" placeholder="e.g. Create VLAN 10 named Sales on SW1"></textarea>
+        <button class="big" onclick="run(this, sendIntent)">Make a plan</button>
+      </div>
+      <div class="card grow">
+        <h2>Plan &amp; result</h2>
+        <div id="plan" class="fill"></div>
+      </div>
+    </div>
 
-  <section>
-    <h2>Add / edit a device</h2>
-    <p style="font-size:13px">Same name = update. Use vendor <b>simulated</b> to test without real devices.</p>
-    <div class="row">
-      <input id="d-name" placeholder="Name (R1)">
-      <input id="d-ip" placeholder="IP (192.168.1.1)">
+    <!-- MIDDLE: topology + charts -->
+    <div class="col">
+      <div class="card grow">
+        <h2>Network topology <span class="hint" title="Drag boxes, scroll to zoom (remembered), click a line to select it">drag &middot; zoom &middot; click a line</span>
+          <button class="small secondary" style="margin-left:auto;white-space:nowrap" onclick="centerView()">Center view</button>
+          <button id="remove-link" class="small danger" style="display:none" onclick="removeLink()"></button>
+        </h2>
+        <div id="graph"></div>
+      </div>
+      <div class="charts">
+        <div class="card"><h2>Network health</h2><div class="donut-wrap" id="health-chart"></div></div>
+        <div class="card"><h2>Devices by vendor</h2><div class="donut-wrap" id="vendor-chart"></div></div>
+      </div>
     </div>
-    <div class="row">
-      <select id="d-vendor">
-        {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
-        {% endfor %}
-      </select>
-      <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
-    </div>
-    <div class="row">
-      <input id="d-username" placeholder="Login username (optional, else from .env)">
-      <input id="d-password" type="password" placeholder="Login password (optional)">
-    </div>
-    <button onclick="addDevice()">Save device</button>
-    <h2 style="margin-top:16px">Link two devices</h2>
-    <div class="row">
-      <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
-      <button class="secondary" onclick="addLink()">Link</button>
-    </div>
-  </section>
 
+    <!-- RIGHT: tabs -->
+    <div class="col">
+      <div class="card grow">
+        <div class="tabs">
+          <button data-tab="devices" class="active" onclick="showTab('devices')">Devices</button>
+          <button data-tab="tools" onclick="showTab('tools')">Tools</button>
+          <button data-tab="results" onclick="showTab('results')">Results</button>
+        </div>
+        <div class="fill">
+
+          <div class="tab active" id="tab-devices">
+            <input id="search" placeholder="Search name, IP, vendor, type..." oninput="renderTable()">
+            <table id="devices"></table>
+          </div>
+
+          <div class="tab" id="tab-tools">
+            <h3>Discovery</h3>
+            <div class="inline">
+              <input id="subnet" placeholder="Subnet, e.g. 192.168.1.0/24">
+              <button class="secondary" onclick="run(this, discover)">Scan (ping)</button>
+            </div>
+            <button class="secondary" onclick="run(this, findLinks)">Find links &amp; IPs</button>
+            <button class="secondary" onclick="run(this, refreshStates)">Refresh up/down</button>
+
+            <h3>Ask the network graph</h3>
+            <div class="inline">
+              <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
+              <button class="secondary" onclick="run(this, findPath)">Path</button>
+            </div>
+            <div class="inline">
+              <input id="g-dev" placeholder="Device (R2)">
+              <button class="secondary" onclick="run(this, whatIfDown)">If it goes down?</button>
+            </div>
+            <button class="secondary" onclick="run(this, criticalDevices)">Critical devices</button>
+
+            <h3>Add / edit a device</h3>
+            <p class="small-text">Same name = update. Username empty = use the one in <b>.env</b>.
+               Password: type a new one to change it, leave empty to keep it.</p>
+            <div class="inline">
+              <input id="d-name" placeholder="Name (R1)">
+              <input id="d-ip" placeholder="IP (192.168.1.1)">
+            </div>
+            <div class="inline">
+              <select id="d-vendor">
+                {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
+                {% endfor %}
+              </select>
+              <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
+            </div>
+            <div class="inline">
+              <input id="d-username" placeholder="Login username (optional)" autocomplete="off"
+                     onfocus="this.select()" oninput="usernameChanged(this)">
+              <input id="d-password" type="password" placeholder="Login password (optional)">
+            </div>
+            <button onclick="run(this, addDevice)">Save device</button> <span id="device-saved"></span>
+
+            <h3>Link two devices</h3>
+            <div class="inline">
+              <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
+              <button class="secondary" onclick="run(this, addLink)">Link</button>
+            </div>
+            <span id="link-saved"></span>
+
+            <h3>New lab</h3>
+            <p class="small-text">Deletes every device, link and history entry.</p>
+            <button class="danger" onclick="newTopology(this)">Start a new topology</button>
+          </div>
+
+          <div class="tab" id="tab-results">
+            <div id="msg" dir="auto"></div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </section>
 </main>
 
 <script>
@@ -110,14 +287,24 @@ const get = url => fetch(url).then(r => r.json());
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;"}[c]));
 const show = data => document.getElementById("msg").innerHTML = "<pre>" + esc(JSON.stringify(data, null, 2)) + "</pre>";
 
+// Run a button's work with a spinner in the button; the button can't be clicked twice meanwhile.
+async function run(button, work) {
+  if (button.classList.contains("busy")) return;
+  button.classList.add("busy"); button.disabled = true;
+  try { await work(); }
+  catch (e) { say(`<span class="error">Something went wrong: ${esc(e.message || e)}</span>`); }
+  finally { button.classList.remove("busy"); button.disabled = false; }
+}
+async function refreshStates() { await post("/api/refresh"); await load(); }
+
 // ---------- 1. intent -> plan ----------
 async function sendIntent() {
   const box = document.getElementById("plan");
-  box.innerHTML = "Thinking...";
+  box.innerHTML = `<p class="small-text"><span class="spinner"></span>The AI is writing the plan...</p>`;
   const plan = await post("/api/intent", {text: document.getElementById("intent").value});
   if (plan.error) { box.innerHTML = `<p class="error">${esc(plan.error)}</p>`; return; }
 
-  let html = `<p><b>Plan:</b> ${esc(plan.summary)}</p>`;
+  let html = `<p><b>Plan:</b> <span dir="auto">${esc(plan.summary)}</span></p>`;
   if (plan.attempts > 1) html += `<p class="warn">The AI's first plan failed the safety checks, so it corrected it.</p>`;
   for (const c of plan.changes) {
     const kind = c.type === "check" ? "check (read-only, normal mode)" : "config (changes the device)";
@@ -130,14 +317,14 @@ async function sendIntent() {
   html += v.warnings.map(w => `<p class="warn">&#9888; ${esc(w)}</p>`).join("");
   if (v.ok) {
     html += `<p class="ok">&#10003; Validation passed</p>
-             <button onclick="approve('${plan.id}')">Approve &amp; apply</button>`;
+             <button onclick="run(this, () => approve('${plan.id}'))">Approve &amp; apply</button>`;
   }
   box.innerHTML = html;
 }
 
 async function approve(id) {
   const box = document.getElementById("plan");
-  box.innerHTML += "<p>Applying...</p>";
+  box.innerHTML += `<p class="small-text"><span class="spinner"></span>Applying to the devices...</p>`;
   const r = await post("/api/approve/" + id);
   let html = `<h3 class="${r.success ? "ok" : "error"}">${r.success ? "Done!" : "Failed"} ${esc(r.error || "")}</h3>`;
   for (const x of r.results) html += `<p><b>${esc(x.device)}</b>: ${esc(x.status)}</p><pre>${esc(x.output)}</pre>`;
@@ -167,16 +354,9 @@ function centerView() { network.fit(); setTimeout(saveView, 600); }
 async function load() {
   const t = await get("/api/topology");
 
-  let rows = "<tr><th>Name</th><th>IP</th><th>Vendor</th><th>State</th><th></th></tr>";
-  for (const d of t.devices) {
-    rows += `<tr><td>${esc(d.name)}</td><td>${esc(d.ip)}</td><td>${esc(d.vendor)}</td>
-      <td class="${esc(d.state)}">${esc(d.state || "?")}</td>
-      <td><button class="secondary" onclick="history_('${esc(d.name)}')">History</button>
-          <button class="secondary" onclick="edit('${esc(d.name)}')">Edit</button>
-          <button class="danger" onclick="del('${esc(d.name)}', this)">X</button></td></tr>`;
-  }
-  document.getElementById("devices").innerHTML = rows;
   window.devices = t.devices;
+  renderTable();
+  updateStats(t);
   if (!window.vis) return;
 
   // Boxes with a saved position stay there (physics off); new ones are placed automatically.
@@ -190,8 +370,13 @@ async function load() {
     edgesData = new vis.DataSet(edges);
     const view = savedView();
     // fit:false = don't jump back to the default view when the picture is drawn
-    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData},
-                              view ? {physics: {stabilization: {fit: false}}} : {});
+    const options = {
+      nodes: {shape: "box", margin: 10, font: {color: "#f0efec", face: "system-ui", size: 13},
+              borderWidth: 2, shapeProperties: {borderRadius: 4}},
+      edges: {color: {color: "#5f6b62", highlight: "#0ca30c"}, width: 2, smooth: false},
+      ...(view ? {physics: {stabilization: {fit: false}}} : {}),
+    };
+    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData}, options);
     if (view) network.moveTo({...view, animation: false});
     network.on("dragEnd", () => { savePositions(); saveView(); });  // moving a box or the whole picture
     network.on("zoom", saveView);
@@ -208,6 +393,97 @@ async function load() {
   edgesData.update(edges);
 }
 
+// ---------- dashboard: tiles, charts, inventory table ----------
+// Device type is guessed from the vendor and the name (only for the tiles and the table).
+function deviceType(d) {
+  const name = (d.name || "").toLowerCase();
+  // a "word" in the name: start of the name or after - _ space (so "HW-SW2" counts as a switch)
+  const has = re => new RegExp("(^|[-_ ])(" + re + ")").test(name);
+  if (d.vendor === "fortigate" || has("fw|firewall")) return "firewall";
+  if (has("sw|switch") || ["cisco_nxos", "arista_eos"].includes(d.vendor)) return "switch";
+  if (has("r\\d|rtr|router") || d.vendor === "mikrotik_routeros") return "router";
+  return "other";
+}
+
+function updateStats(t) {
+  const count = f => t.devices.filter(f).length;
+  for (const type of ["router", "switch", "firewall", "other"])
+    document.getElementById("t-" + type).textContent = count(d => deviceType(d) === type);
+  document.getElementById("t-links").textContent = t.links.length;
+  document.getElementById("t-down").textContent = count(d => d.state === "down");
+  document.getElementById("updated").textContent = "Updated " + new Date().toLocaleTimeString();
+
+  const up = count(d => d.state === "up"), down = count(d => d.state === "down");
+  donut("health-chart", t.devices.length, [
+    {label: "Up", value: up, color: "var(--good)"},
+    {label: "Down", value: down, color: "var(--critical)"},
+    {label: "Not checked", value: t.devices.length - up - down, color: "var(--muted)"},
+  ]);
+  // Vendors are sorted by name, so each vendor always keeps the same color.
+  const vendors = [...new Set(t.devices.map(d => d.vendor))].sort();
+  donut("vendor-chart", t.devices.length, vendors.map((v, i) => ({
+    label: v, value: count(d => d.vendor === v), color: `var(--s${(i % 8) + 1})`})));
+}
+
+// A ring chart drawn with SVG: one arc per item, a small gap between arcs, the total in the middle.
+function donut(id, total, items) {
+  const parts = items.filter(i => i.value > 0);
+  const r = 50, c = 2 * Math.PI * r, gap = parts.length > 1 ? 2 : 0;  // no gap when one part = full ring
+  let offset = 0, arcs = "";
+  for (const it of parts) {
+    const len = c * it.value / total;
+    arcs += `<circle class="seg" cx="60" cy="60" r="${r}" fill="none" stroke="${it.color}" stroke-width="14"
+               stroke-dasharray="${Math.max(len - gap, 0.5)} ${c}" stroke-dashoffset="${-offset}">
+               <title>${esc(it.label)}: ${it.value} (${Math.round(100 * it.value / total)}%)</title></circle>`;
+    offset += len;
+  }
+  if (!total) arcs = `<circle cx="60" cy="60" r="${r}" fill="none" stroke="#2c2c2a" stroke-width="14"/>`;
+  const legend = items.map(it => `<li><span class="sw" style="background:${it.color}"></span>${esc(it.label)}
+      <span class="val">${it.value}</span><span class="pct">${total ? Math.round(100 * it.value / total) : 0}%</span></li>`).join("");
+  document.getElementById(id).innerHTML =
+    `<div class="donut"><svg viewBox="0 0 120 120">${arcs}</svg><div class="center">${total}</div></div>
+     <ul class="legend">${legend || '<li class="small-text">No devices yet</li>'}</ul>`;
+}
+
+function renderTable() {
+  const q = (document.getElementById("search").value || "").toLowerCase();
+  const list = (window.devices || []).filter(d =>
+    [d.name, d.ip, d.vendor, deviceType(d)].join(" ").toLowerCase().includes(q));
+  let rows = "<tr><th>Device</th><th>IP / state</th><th></th></tr>";
+  for (const d of list) {
+    const state = d.state === "up" || d.state === "down" ? d.state : "unknown";
+    rows += `<tr><td><b>${esc(d.name)}</b> <span class="tag">${deviceType(d)}</span>
+      <div class="small-text" style="margin:2px 0 0">${esc(d.vendor)}</div></td>
+      <td>${esc(d.ip)}<br><span class="pill ${state}">${esc(d.state || "not checked")}</span></td>
+      <td style="white-space:nowrap;text-align:right">
+          <button class="small secondary" onclick="history_('${esc(d.name)}')">History</button>
+          <button class="small secondary" onclick="edit('${esc(d.name)}')">Edit</button>
+          <button class="small danger" onclick="del('${esc(d.name)}', this)">X</button></td></tr>`;
+  }
+  if (!list.length) rows += `<tr><td colspan="3" class="small-text">${q ? "No device matches the search."
+                                 : "No devices yet: scan a subnet or add one in Tools."}</td></tr>`;
+  document.getElementById("devices").innerHTML = rows;
+}
+
+// Tabs on the right side.
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
+}
+// When something writes into "Results" (history, discovery, graph answers...), show that tab.
+new MutationObserver(() => showTab("results")).observe(document.getElementById("msg"), {childList: true});
+
+// Small line icons for the tiles.
+const ICONS = {
+  router: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M8 12h8M12 8v8"/></svg>',
+  switch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h.01M11 12h.01M15 12h.01"/></svg>',
+  firewall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>',
+  other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
+};
+document.querySelectorAll("[data-icon]").forEach(el => el.innerHTML = ICONS[el.dataset.icon]);
+
 function showLinkButton() {
   const b = document.getElementById("remove-link");
   b.style.display = selectedLink ? "" : "none";
@@ -219,14 +495,20 @@ async function removeLink() {
                              body: JSON.stringify({a: selectedLink.from, b: selectedLink.to})});
   selectedLink = null; showLinkButton(); load();
 }
-const nodeColor = d => d.state === "down" ? "#f5b7b1" : "#a9dfbf";
+// Box colors: dark fill + colored border (green up, red down, gray unknown).
+const nodeColor = d => {
+  const border = d.state === "down" ? "#d03b3b" : d.state === "up" ? "#0ca30c" : "#898781";
+  const bg = d.state === "down" ? "#3a1616" : d.state === "up" ? "#13301a" : "#2a2a28";
+  return {background: bg, border, highlight: {background: bg, border: "#f0efec"}};
+};
 
 // ---------- graph questions (answered by NetworkX on the server) ----------
 function highlight(groups) {  // groups = [[names], [names]...], each group gets a color
-  const colors = ["#f9e79f", "#aed6f1", "#d7bde2", "#f5cba7"];
+  const colors = ["#3987e5", "#d95926", "#199e70", "#c98500"];  // chart colors 1-4
   if (!nodesData) return;
   nodesData.update(window.devices.map(d => ({id: d.name, color: nodeColor(d)})));  // reset
-  groups.forEach((g, i) => nodesData.update(g.map(n => ({id: n, color: colors[i % colors.length]}))));
+  groups.forEach((g, i) => nodesData.update(g.map(n => ({id: n,
+    color: {background: colors[i % colors.length], border: "#f0efec"}}))));
 }
 const say = html => document.getElementById("msg").innerHTML = "<p>" + html + "</p>";
 
@@ -266,17 +548,57 @@ async function criticalDevices() {
 
 function edit(name) {
   const d = window.devices.find(x => x.name === name);
-  for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
-  document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
+  showTab("tools");
+  document.getElementById("d-name").scrollIntoView({behavior: "smooth", block: "center"});
+  for (const k of ["name", "ip", "vendor"]) document.getElementById("d-" + k).value = d[k] || "";
+  document.getElementById("d-protocol").value = d.protocol || "ssh";
+  // A saved username is hidden like the password: the box shows dots. Leave it = keep it,
+  // empty it = use the .env username, type a new one = replace it (same rules as before).
+  const user = document.getElementById("d-username");
+  if (d.has_username) { user.value = HIDDEN; user.type = "password"; user.dataset.hidden = "1"; }
+  else resetUsernameBox();
+  const pw = document.getElementById("d-password");
+  pw.value = "";  // never shown; leave empty to keep the saved one
+  pw.placeholder = d.has_password ? "New password (empty = keep the saved one)" : "Login password (optional)";
 }
+const HIDDEN = "••••••";  // what the username box shows for a saved (hidden) username
+function resetUsernameBox() {
+  const user = document.getElementById("d-username");
+  user.value = ""; user.type = "text"; delete user.dataset.hidden;
+}
+// As soon as you change the dots, the box holds a real value again (visible while typing).
+function usernameChanged(box) {
+  if (box.dataset.hidden && box.value !== HIDDEN) { delete box.dataset.hidden; box.type = "text"; }
+}
+// A short green "✓ saved" next to the button; it disappears after a few seconds.
+function tick(id, text) {
+  const el = document.getElementById(id);
+  el.innerHTML = `<span class="saved"><span class="check"><svg viewBox="0 0 24 24" fill="none" stroke="#fff"
+      stroke-width="3.5" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12.5l4.5 4.5L19 7.5"/></svg></span>${esc(text)}</span>`;
+  clearTimeout(el.timer); el.timer = setTimeout(() => el.innerHTML = "", 4000);
+}
+// Save a device and stay here (ready for the next one). Only a problem goes to the Results tab.
 async function addDevice() {
   const d = {};
   for (const k of ["name", "ip", "vendor", "protocol", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
-  document.getElementById("d-password").value = "";
-  show(await post("/api/devices", d)); load();
+  if (document.getElementById("d-username").dataset.hidden) delete d.username;  // dots untouched = keep it
+  let r;
+  try { r = await post("/api/devices", d); } catch (e) { r = {error: "The server did not answer."}; }
+  if (!r.ok) return say(`<span class="error">Device not saved: ${esc(r.error || "unknown error")}</span>`);
+  tick("device-saved", `${d.name} saved`);
+  for (const k of ["name", "ip", "password"]) document.getElementById("d-" + k).value = "";
+  resetUsernameBox();
+  document.getElementById("d-password").placeholder = "Login password (optional)";
+  document.getElementById("d-name").focus();
+  load();
 }
 async function addLink() {
-  show(await post("/api/links", {a: document.getElementById("l-a").value, b: document.getElementById("l-b").value}));
+  const a = document.getElementById("l-a").value, b = document.getElementById("l-b").value;
+  if (!a || !b) return say(`<span class="error">Type both device names to link them.</span>`);
+  const r = await post("/api/links", {a, b});
+  if (!r.ok) return say(`<span class="error">Link not added: ${esc(r.error)}</span>`);
+  tick("link-saved", `${r.a} — ${r.b} linked`);
+  document.getElementById("l-a").value = document.getElementById("l-b").value = "";
   load();
 }
 // First click: the button asks "Sure?". Second click (within 3 seconds): delete.
@@ -291,6 +613,23 @@ async function del(name, button) {
   await fetch("/api/devices/" + encodeURIComponent(name), {method: "DELETE"});
   load();
 }
+// Start over with an empty knowledge base. First click asks "Sure?", second click deletes.
+async function newTopology(button) {
+  if (!button.dataset.sure) {
+    button.dataset.sure = "1";
+    button.textContent = "Sure? Click again to delete everything";
+    setTimeout(() => { delete button.dataset.sure; button.textContent = "Start a new topology"; }, 4000);
+    return;
+  }
+  button.classList.add("busy"); button.disabled = true;
+  try { await post("/api/reset"); } finally { button.classList.remove("busy"); button.disabled = false; }
+  try { localStorage.removeItem("ibn-positions"); localStorage.removeItem("ibn-view"); } catch (e) {}
+  button.textContent = "Start a new topology"; delete button.dataset.sure;
+  document.getElementById("plan").innerHTML = "";
+  say(`<span class="ok">Everything was deleted. Add your new devices, then click Find links.</span>`);
+  load();
+}
+
 // History of one device, as readable cards (newest first). The device output is folded away.
 async function history_(name) {
   const changes = (await get("/api/devices/" + name + "/history")).reverse();
@@ -306,7 +645,7 @@ async function history_(name) {
     html += `<div class="hist ${kind}">
       ${icon} <span class="when">${esc(when)}</span><span class="tag">${check ? "CHECK" : "CONFIG"}</span>
       ${statuses ? `<span class="when"> (${esc(statuses)})</span>` : ""}
-      <div><i>"${esc(c.intent)}"</i></div>
+      <div dir="auto"><i>"${esc(c.intent)}"</i></div>
       <ul>${(c.commands || []).map(cmd => `<li>${esc(cmd)}</li>`).join("")}</ul>
       ${output ? `<details><summary>Show device output</summary><pre>${esc(output)}</pre></details>` : ""}
     </div>`;

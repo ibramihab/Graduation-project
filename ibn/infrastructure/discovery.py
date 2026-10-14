@@ -13,22 +13,39 @@ import socket
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 
+from ..vendors import get_vendor
 from .drivers import DRIVERS, get_driver
 
 PORTS = {22: "ssh", 23: "telnet", 80: "http"}
 
 
 def ping(ip: str) -> bool:
+    """True if the device answers. We send 2 pings: right after a device comes back,
+    the router in between often drops the FIRST packet while it looks up the MAC
+    address (ARP), so one lost ping doesn't mean "down"."""
     if platform.system() == "Windows":
-        command = ["ping", "-n", "1", "-w", "1000", ip]
+        command = ["ping", "-n", "2", "-w", "1000", ip]
     else:
-        command = ["ping", "-c", "1", "-W", "1", ip]
-    return subprocess.run(command, capture_output=True).returncode == 0
+        command = ["ping", "-c", "2", "-W", "1", ip]
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=10)
+    except Exception:  # ping missing or stuck: treat as no answer
+        return False
+    if result.returncode != 0:
+        return False
+    # A real answer contains "TTL=" (in most Windows languages too). If it doesn't (another
+    # language, or Windows' "Destination host unreachable" that still exits with 0),
+    # double-check: can we open the SSH or Telnet port?
+    if b"ttl=" in result.stdout.lower():
+        return True
+    return bool(open_ports(ip, (22, 23)))
 
 
-def open_ports(ip: str) -> list[str]:
+def open_ports(ip: str, ports=None) -> list[str]:
     found = []
     for port, name in PORTS.items():
+        if ports and port not in ports:
+            continue
         with socket.socket() as s:
             s.settimeout(0.5)
             if s.connect_ex((ip, port)) == 0:
@@ -74,9 +91,12 @@ def refresh_states(kb) -> None:
 
 def discover_links(kb) -> list[str]:
     """Log in to each device, save its interface IPs and ask for its neighbors.
+    Old links that no longer exist are removed (see _remove_stale_links).
     Returns any errors."""
     names = {d["name"] for d in kb.list_devices()}
     errors = []
+    asked = set()   # devices we really asked for neighbors (logged in + vendor supports it)
+    found = set()   # links seen now, e.g. {"R1", "SW"}
     for device in kb.list_devices():
         if device.get("vendor") not in DRIVERS:
             continue  # e.g. "unknown" devices found by the ping scan: we can't log in
@@ -86,6 +106,21 @@ def discover_links(kb) -> list[str]:
                 for neighbor in driver.get_neighbors():
                     if neighbor in names:
                         kb.add_link(device["name"], neighbor)
+                        found.add(frozenset((device["name"], neighbor)))
+            profile = get_vendor(device.get("vendor"))
+            if profile and profile.neighbors:
+                asked.add(device["name"])
         except Exception as e:  # unknown vendor, unreachable, wrong password...
             errors.append(f"{device['name']}: {e}")
+    _remove_stale_links(kb, asked, found)
     return errors
+
+
+def _remove_stale_links(kb, asked, found):
+    """Remove a link only when we are SURE it's gone: both devices answered the neighbor
+    question and neither reported the other. Links added by hand are never removed,
+    and nothing is removed for devices we couldn't log in to."""
+    for link in kb.list_links():
+        both_asked = link["a"] in asked and link["b"] in asked
+        if both_asked and not link.get("manual") and frozenset((link["a"], link["b"])) not in found:
+            kb.delete_link(link["a"], link["b"])
