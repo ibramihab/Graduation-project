@@ -49,7 +49,7 @@ def create_app(kb=None, llm=None) -> Flask:
 
     @app.post("/api/links")
     def add_link():
-        kb.add_link(request.json["a"], request.json["b"])
+        kb.add_link(request.json["a"], request.json["b"], manual=True)
         return jsonify({"ok": True})
 
     @app.delete("/api/links")
@@ -81,6 +81,12 @@ def create_app(kb=None, llm=None) -> Flask:
     def discover():
         found = discovery.discover(kb, request.json["subnet"])
         return jsonify({"found": len(found)})
+
+    @app.post("/api/reset")
+    def reset():
+        """Start a new topology: delete every device, link and history entry."""
+        kb.clear()
+        return jsonify({"ok": True})
 
     @app.post("/api/discover-links")
     def discover_links():

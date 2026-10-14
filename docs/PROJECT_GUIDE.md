@@ -575,7 +575,8 @@ also receives the list of links so it knows how devices are connected.
 |---|---|
 | IPs on data interfaces | **Find links & IPs** (re-reads every device's interfaces) |
 | Added a cable | **Find links & IPs** (CDP finds it) |
-| Removed a cable | click the line in the topology picture → **Remove link** |
+| Removed a cable | **Find links & IPs** removes it (if both devices answered), or click the line → **Remove link** |
+| A completely new lab | **Start a new topology** (Discovery card): deletes every device, link and history entry |
 | Added a device | **Save device**, then **Find links & IPs** |
 | Removed a device | **X** next to it |
 | Management IP (e0/3) | **Edit** → change IP → **Save device** |

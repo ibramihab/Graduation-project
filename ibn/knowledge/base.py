@@ -36,14 +36,15 @@ class KnowledgeBase(ABC):
 
     # ---- links (graph edges) ----
     @abstractmethod
-    def add_link(self, a: str, b: str) -> None: ...
+    def add_link(self, a: str, b: str, manual: bool = False) -> None:
+        """manual=True: added by hand on the web page. "Find links" never removes it."""
 
     @abstractmethod
     def delete_link(self, a: str, b: str) -> None: ...
 
     @abstractmethod
     def list_links(self) -> list[dict]:
-        """Return [{"a": "R1", "b": "SW1"}, ...]"""
+        """Return [{"a": "R1", "b": "SW1", "manual": False}, ...]"""
 
     # ---- history ----
     @abstractmethod
@@ -51,6 +52,11 @@ class KnowledgeBase(ABC):
 
     @abstractmethod
     def get_history(self, device_name: str) -> list[dict]: ...
+
+    # ---- start over ----
+    @abstractmethod
+    def clear(self) -> None:
+        """Delete every device, link and history entry (for a brand-new topology)."""
 
     # ---- helpers shared by every backend ----
     def find_by_ip(self, ip: str) -> dict | None:

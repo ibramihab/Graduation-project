@@ -7,6 +7,18 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Old topology data no longer sticks around
+- 🟢 **Start a new topology** button (Discovery card): deletes every device, link and history
+  entry, safely, while the program runs. New URL `POST /api/reset`.
+- 🟡 **Find links** now also **removes** links that are gone: only when both devices answered and
+  neither reports the other. Links added by hand ("Link two devices") are never removed.
+- 🟡 Deleting a device (**X**) now also deletes its history, so a new device with the same name
+  starts clean.
+- Files: `ibn/knowledge/base.py` (new `clear()`, `add_link(..., manual=False)`; links now also
+  have a `manual` field), `file_graph.py`, `neo4j_graph.py`, `ibn/infrastructure/discovery.py`,
+  `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (5 new tests), `docs/PROJECT_GUIDE.md`.
+- Nothing was renamed or removed: other layers keep working as before.
+
 ### Dashboard look + Arabic text fixed
 - 🟡 `ibn/interface/templates/index.html`: new dashboard layout. Status tiles at the top
   (devices, up, down, links, vendors), then 3 columns: request + plan | topology + results |

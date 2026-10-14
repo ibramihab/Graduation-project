@@ -141,6 +141,9 @@
       </div>
       <button class="secondary" onclick="findLinks()">Find links &amp; IPs (CDP)</button>
       <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
+      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
+      <p class="small-text">New lab? This deletes every device, link and history entry.</p>
+      <button class="danger" onclick="newTopology(this)">Start a new topology</button>
     </section>
 
     <section class="card">
@@ -396,6 +399,22 @@ async function del(name, button) {
   await fetch("/api/devices/" + encodeURIComponent(name), {method: "DELETE"});
   load();
 }
+// Start over with an empty knowledge base. First click asks "Sure?", second click deletes.
+async function newTopology(button) {
+  if (!button.dataset.sure) {
+    button.dataset.sure = "1";
+    button.textContent = "Sure? Click again to delete everything";
+    setTimeout(() => { delete button.dataset.sure; button.textContent = "Start a new topology"; }, 4000);
+    return;
+  }
+  await post("/api/reset");
+  try { localStorage.removeItem("ibn-positions"); localStorage.removeItem("ibn-view"); } catch (e) {}
+  button.textContent = "Start a new topology"; delete button.dataset.sure;
+  document.getElementById("plan").innerHTML = "";
+  say(`<span class="ok">Everything was deleted. Add your new devices, then click Find links.</span>`);
+  load();
+}
+
 // History of one device, as readable cards (newest first). The device output is folded away.
 async function history_(name) {
   const changes = (await get("/api/devices/" + name + "/history")).reverse();

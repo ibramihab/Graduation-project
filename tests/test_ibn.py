@@ -55,7 +55,7 @@ def change(device, commands, rollback, type="config"):
 
 def test_knowledge_base_graph(kb):
     assert {d["name"] for d in kb.list_devices()} == {"R1", "SW1"}
-    assert kb.list_links() == [{"a": "R1", "b": "SW1"}]
+    assert kb.list_links() == [{"a": "R1", "b": "SW1", "manual": False}]
     kb.add_link("SW1", "R1")  # same link the other way: no duplicate
     assert len(kb.list_links()) == 1
     kb.delete_link("SW1", "R1")  # either direction works
@@ -309,3 +309,62 @@ def test_vendor_dropdown_comes_from_profiles(tmp_path):
     client = create_app(FileGraph(str(tmp_path / "kb.json")), FakeLLM({})).test_client()
     page = client.get("/").text
     assert 'value="fortigate"' in page and 'value="huawei"' in page
+
+
+# ---- starting over / keeping the knowledge base clean ----
+def test_clear_starts_a_new_topology(kb):
+    kb.record_change("R1", {"time": "t", "intent": "x", "commands": []})
+    kb.clear()
+    assert kb.list_devices() == [] and kb.list_links() == []
+    kb.add_device({"name": "R1", "ip": "10.0.0.9", "vendor": "simulated"})
+    assert kb.get_history("R1") == []  # the old R1's history is gone
+
+
+def test_deleting_a_device_deletes_its_history(kb):
+    kb.record_change("R1", {"time": "t", "intent": "x", "commands": []})
+    kb.delete_device("R1")
+    kb.add_device({"name": "R1", "ip": "10.0.0.9", "vendor": "simulated"})
+    assert kb.get_history("R1") == []
+
+
+def test_reset_url(kb):
+    client = create_app(kb, FakeLLM({})).test_client()
+    assert client.post("/api/reset").json["ok"]
+    assert client.get("/api/topology").json["devices"] == []
+
+
+def test_find_links_removes_links_that_are_gone(kb, monkeypatch):
+    from ibn.infrastructure import discovery
+    for name in ("R1", "R2", "R3", "SW1"):
+        kb.add_device({"name": name, "ip": "10.0.0.1", "vendor": "cisco_ios", "state": "up"})
+    kb.add_link("R1", "R2")                 # old cable, no longer there
+    kb.add_link("R1", "R3", manual=True)    # added by hand (e.g. a tunnel)
+    neighbors = {"R1": ["SW1"], "SW1": ["R1"], "R2": [], "R3": []}
+
+    class FakeDriver:
+        def __init__(self, device): self.name = device["name"]
+        def __enter__(self): return self
+        def __exit__(self, *exc): return False
+        def get_interfaces(self): return []
+        def get_neighbors(self): return neighbors[self.name]
+    monkeypatch.setattr(discovery, "get_driver", FakeDriver)
+
+    assert discovery.discover_links(kb) == []
+    links = {frozenset((l["a"], l["b"])) for l in kb.list_links()}
+    assert frozenset(("R1", "SW1")) in links      # found now
+    assert frozenset(("R1", "R2")) not in links   # gone: removed
+    assert frozenset(("R1", "R3")) in links       # manual: kept
+
+
+def test_find_links_keeps_links_of_devices_it_could_not_reach(kb, monkeypatch):
+    from ibn.infrastructure import discovery
+    for name in ("R1", "R2"):
+        kb.add_device({"name": name, "ip": "10.0.0.1", "vendor": "cisco_ios", "state": "up"})
+    kb.add_link("R1", "R2")
+
+    def broken(device):
+        raise RuntimeError("Authentication failed")
+    monkeypatch.setattr(discovery, "get_driver", broken)
+    errors = discovery.discover_links(kb)
+    assert any(e.startswith("R1:") for e in errors) and any(e.startswith("R2:") for e in errors)
+    assert {frozenset((l["a"], l["b"])) for l in kb.list_links()} >= {frozenset(("R1", "R2"))}
