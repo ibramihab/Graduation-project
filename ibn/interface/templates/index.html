@@ -424,8 +424,7 @@ function renderTable() {
   for (const d of list) {
     const state = d.state === "up" || d.state === "down" ? d.state : "unknown";
     rows += `<tr><td><b>${esc(d.name)}</b> <span class="tag">${deviceType(d)}</span>
-      <div class="small-text" style="margin:2px 0 0">${esc(d.vendor)} &middot; login: ${esc(d.username || ".env")}${
-        d.has_password ? " + own password" : ""}</div></td>
+      <div class="small-text" style="margin:2px 0 0">${esc(d.vendor)}</div></td>
       <td>${esc(d.ip)}<br><span class="pill ${state}">${esc(d.state || "not checked")}</span></td>
       <td style="white-space:nowrap;text-align:right">
           <button class="small secondary" onclick="history_('${esc(d.name)}')">History</button>

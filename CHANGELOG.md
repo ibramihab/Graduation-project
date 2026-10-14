@@ -11,8 +11,8 @@ Every change to the project is listed here, so nothing surprises you.
 - 🟡 Edit a device → type only a new password → Save: the password changes and the username
   stays (its own, or the `.env` one). Before, a device using the `.env` username lost the new
   password. Emptying both boxes still goes back to the full `.env` login.
-- 🟡 The device table shows each device's login: `login: admin + own password` or `login: .env`.
-  The page only learns *whether* a password is saved (`has_password`), never the password.
+- 🟡 The page only learns *whether* a password is saved (`has_password`, used for the hint in the
+  password box), never the password. (The login is not shown in the device table.)
 - Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (1 new test).
 
 ### Device login fix + faster adding
