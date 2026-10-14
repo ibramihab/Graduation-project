@@ -32,8 +32,9 @@ def create_app(kb=None, llm=None) -> Flask:
     # ---- knowledge base: devices, links, history ----
     @app.get("/api/topology")
     def topology():
-        devices = [{k: v for k, v in d.items() if k not in ("password", "last_config")}
-                   for d in kb.list_devices()]
+        # passwords are never sent to the page; it only learns whether one is saved
+        devices = [{**{k: v for k, v in d.items() if k not in ("password", "last_config")},
+                    "has_password": bool(d.get("password"))} for d in kb.list_devices()]
         return jsonify({"devices": devices, "links": kb.list_links()})
 
     @app.post("/api/devices")
@@ -41,11 +42,17 @@ def create_app(kb=None, llm=None) -> Flask:
         device = {k: v for k, v in request.json.items() if v not in ("", None)}
         if not device.get("name") or not device.get("ip"):
             return jsonify({"ok": False, "error": "Name and IP are required."})
-        # Username box left empty = "use the login from .env": forget this device's own
-        # username AND password. (An empty password box alone keeps the saved password,
-        # because the page never shows saved passwords.)
-        if "username" in request.json and not request.json["username"]:
-            device["username"] = device["password"] = None
+        # The login boxes, when editing:
+        #   username empty                -> use the username from .env
+        #   password typed                -> save this new password
+        #   password empty                -> keep the saved password (the page never shows it)...
+        #   ...unless username is empty too -> forget both: use the full .env login
+        username_empty = "username" in request.json and not request.json["username"]
+        password_empty = not request.json.get("password")
+        if username_empty:
+            device["username"] = None
+            if password_empty:
+                device["password"] = None
         kb.add_device(device)
         return jsonify({"ok": True})
 

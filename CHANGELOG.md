@@ -7,6 +7,14 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Change only a device's password
+- 🟡 Edit a device → type only a new password → Save: the password changes and the username
+  stays (its own, or the `.env` one). Before, a device using the `.env` username lost the new
+  password. Emptying both boxes still goes back to the full `.env` login.
+- 🟡 The device table shows each device's login: `login: admin + own password` or `login: .env`.
+  The page only learns *whether* a password is saved (`has_password`), never the password.
+- Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (1 new test).
+
 ### Device login fix + faster adding
 - 🟡 Editing a device and **emptying the username** now really removes its own login, so it
   uses the one in `.env` again (before, the old username stayed). An empty password alone

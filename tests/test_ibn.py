@@ -382,6 +382,23 @@ def test_clearing_the_username_goes_back_to_env_login(kb):
     assert not device.get("username") and not device.get("password")
 
 
+def test_change_only_the_password(kb):
+    client = create_app(kb, FakeLLM({})).test_client()
+    # device with its own username
+    client.post("/api/devices", json={"name": "R1", "ip": "10.0.0.1", "username": "admin", "password": "old"})
+    client.post("/api/devices", json={"name": "R1", "ip": "10.0.0.1", "username": "admin", "password": "new"})
+    assert kb.get_device("R1")["username"] == "admin" and kb.get_device("R1")["password"] == "new"
+    # device that uses the .env username: only a password is typed
+    client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "username": "", "password": "p2"})
+    assert not kb.get_device("R2").get("username") and kb.get_device("R2")["password"] == "p2"
+    client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "username": "", "password": "p3"})
+    assert kb.get_device("R2")["password"] == "p3"
+    # the page learns only WHETHER a password is saved, never the password
+    page_devices = client.get("/api/topology").json["devices"]
+    r2 = next(d for d in page_devices if d["name"] == "R2")
+    assert r2["has_password"] is True and "password" not in r2
+
+
 def test_empty_password_keeps_the_saved_one(kb):
     client = create_app(kb, FakeLLM({})).test_client()
     client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "username": "admin", "password": "p1"})
