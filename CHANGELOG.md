@@ -9,8 +9,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ### Refresh up/down: no false "down" after a device comes back
 - 🟡 `ibn/infrastructure/discovery.py`: sends 2 pings instead of 1 (the first one is often
-  dropped while the router re-learns the device's MAC address), and only counts a real reply
-  (`TTL=`), not Windows' "Destination host unreachable".
+  dropped while the router re-learns the device's MAC address).
+- 🟡 Fix of the first version of this change: it looked for the text `TTL=` in ping's answer,
+  which Windows in some languages doesn't print, so every device showed "down". Now: ping
+  succeeded + `TTL=` → up; ping succeeded without `TTL=` → up only if the SSH/Telnet port answers
+  (this still filters out Windows' "Destination host unreachable").
 - `tests/test_ibn.py`: 1 new test.
 
 ### Manual links: names are matched, errors are shown

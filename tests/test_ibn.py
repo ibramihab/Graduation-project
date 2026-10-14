@@ -425,13 +425,16 @@ def test_ping_counts_a_real_reply_even_if_the_first_packet_is_lost(monkeypatch):
     from ibn.infrastructure import discovery
 
     class Result:
-        def __init__(self, code, out): self.returncode, self.stdout = code, out
+        def __init__(self, code, out): self.returncode, self.stdout = code, out.encode()
     replies = {
         "lost-then-ok": Result(0, "Request timed out.\nReply from 10.0.0.1: bytes=32 time=2ms TTL=255"),
         "unreachable": Result(0, "Reply from 10.0.0.9: Destination host unreachable."),
+        "other-language": Result(0, "\u0627\u0644\u0631\u062f 10.0.0.5"),  # no "TTL" text, but SSH answers
         "nothing": Result(1, "Request timed out.\nRequest timed out."),
     }
     monkeypatch.setattr(discovery.subprocess, "run", lambda command, **kw: replies[command[-1]])
+    monkeypatch.setattr(discovery, "open_ports", lambda ip, ports=None: ["ssh"] if ip == "other-language" else [])
     assert discovery.ping("lost-then-ok") is True
     assert discovery.ping("unreachable") is False
+    assert discovery.ping("other-language") is True
     assert discovery.ping("nothing") is False

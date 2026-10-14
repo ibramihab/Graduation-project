@@ -27,15 +27,25 @@ def ping(ip: str) -> bool:
         command = ["ping", "-n", "2", "-w", "1000", ip]
     else:
         command = ["ping", "-c", "2", "-W", "1", ip]
-    result = subprocess.run(command, capture_output=True, text=True, errors="ignore")
-    # A real answer contains "TTL=". (Windows ping can "succeed" on a
-    # "Destination host unreachable" message, which is not an answer from the device.)
-    return result.returncode == 0 and "ttl=" in result.stdout.lower()
+    try:
+        result = subprocess.run(command, capture_output=True, timeout=10)
+    except Exception:  # ping missing or stuck: treat as no answer
+        return False
+    if result.returncode != 0:
+        return False
+    # A real answer contains "TTL=" (in most Windows languages too). If it doesn't (another
+    # language, or Windows' "Destination host unreachable" that still exits with 0),
+    # double-check: can we open the SSH or Telnet port?
+    if b"ttl=" in result.stdout.lower():
+        return True
+    return bool(open_ports(ip, (22, 23)))
 
 
-def open_ports(ip: str) -> list[str]:
+def open_ports(ip: str, ports=None) -> list[str]:
     found = []
     for port, name in PORTS.items():
+        if ports and port not in ports:
+            continue
         with socket.socket() as s:
             s.settimeout(0.5)
             if s.connect_ex((ip, port)) == 0:
