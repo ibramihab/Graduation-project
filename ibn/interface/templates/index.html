@@ -22,45 +22,53 @@
          font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; font-size: 14px; }
   a { color: inherit; }
 
-  /* ---------- top navigation ---------- */
-  .topbar { position: sticky; top: 0; z-index: 10; background: #111110; border-bottom: 1px solid var(--line);
-            display: flex; align-items: center; gap: 4px; padding: 0 16px; height: 48px; }
-  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-right: 18px; }
+  /* ---------- one screen: the page never scrolls, long lists scroll inside their box ---------- */
+  html, body { height: 100%; }
+  body { display: flex; flex-direction: column; overflow: hidden; }
+  .topbar { flex: 0 0 auto; background: #111110; border-bottom: 1px solid var(--line);
+            display: flex; align-items: center; gap: 12px; padding: 0 16px; height: 44px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; }
   .brand .logo { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 13px; }
-  .nav a { text-decoration: none; color: var(--ink-2); padding: 14px 12px; display: inline-block;
-           border-bottom: 2px solid transparent; }
-  .nav a:hover { color: var(--ink); border-bottom-color: var(--accent); }
   .updated { margin-left: auto; color: var(--muted); font-size: 12px; }
 
-  /* ---------- page grid ---------- */
-  .page { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
-  .row { display: grid; gap: 16px; }
-  .tiles { grid-template-columns: repeat(6, 1fr); }
-  .r-overview { grid-template-columns: 1.4fr 1fr 1fr; }
-  .r-main { grid-template-columns: 2fr 1fr; align-items: start; }
-  .r-bottom { grid-template-columns: 2fr 1fr; align-items: start; }
-  .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px; min-width: 0; }
-  .card h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--ink-2);
-             display: flex; align-items: center; gap: 8px; }
+  .page { flex: 1; min-height: 0; padding: 12px; display: flex; flex-direction: column; gap: 12px; }
+  .tiles { display: grid; grid-template-columns: repeat(6, 1fr); gap: 12px; flex: 0 0 auto; }
+  .main { flex: 1; min-height: 0; display: grid; gap: 12px;
+          grid-template-columns: minmax(270px, 1fr) minmax(340px, 1.6fr) minmax(330px, 1.2fr); }
+  .col { display: flex; flex-direction: column; gap: 12px; min-height: 0; min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 12px 14px; min-width: 0; }
+  .card.grow { flex: 1; min-height: 0; display: flex; flex-direction: column; }
+  .card.grow > .fill { flex: 1; min-height: 0; overflow: auto; }
+  .card h2 { margin: 0 0 8px; font-size: 13px; font-weight: 600; color: var(--ink-2);
+             display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
   .card h2 .hint { font-weight: normal; color: var(--muted); font-size: 12px; }
-  .scroll { max-height: 460px; overflow: auto; }
+  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 0 0 auto; }
+
+  /* tabs on the right side */
+  .tabs { display: flex; gap: 2px; border-bottom: 1px solid var(--line); margin: -4px 0 10px; flex: 0 0 auto; }
+  .tabs button { background: transparent; color: var(--ink-2); border-radius: 0; margin: 0; padding: 8px 12px;
+                 border-bottom: 2px solid transparent; }
+  .tabs button.active { color: var(--ink); border-bottom-color: var(--accent); }
+  .tab { display: none; } .tab.active { display: block; }
+  .tab h3 { font-size: 12px; color: var(--muted); font-weight: 600; margin: 14px 0 4px; text-transform: uppercase; }
+  .tab h3:first-child { margin-top: 0; }
 
   /* ---------- tiles ---------- */
   .tile { display: flex; align-items: center; gap: 12px; }
-  .tile .icon { width: 40px; height: 40px; border-radius: 6px; background: #13301a; color: var(--good);
+  .tile { padding: 10px 12px; }
+  .tile .icon { width: 36px; height: 36px; border-radius: 6px; background: #13301a; color: var(--good);
                 display: grid; place-items: center; flex: 0 0 auto; }
   .tile .icon svg { width: 22px; height: 22px; }
   .tile .label { color: var(--muted); font-size: 12px; }
-  .tile .num { font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .tile .num { font-size: 22px; font-weight: 700; line-height: 1.2; }
   .tile.down .icon { background: #3a1616; color: var(--critical); }
 
   /* ---------- donut charts ---------- */
-  .donut-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
-  .donut { position: relative; width: 120px; height: 120px; flex: 0 0 auto; }
-  .donut svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+  .donut-wrap { display: flex; align-items: center; gap: 16px; }
+  .donut { position: relative; width: 92px; height: 92px; flex: 0 0 auto; }
+  .donut svg { width: 92px; height: 92px; transform: rotate(-90deg); }
   .donut .center { position: absolute; inset: 0; display: grid; place-items: center;
-                   font-size: 26px; font-weight: 700; }
+                   font-size: 22px; font-weight: 700; }
   .donut circle.seg { transition: stroke-width .15s; cursor: default; }
   .donut circle.seg:hover { stroke-width: 18; }
   .legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 140px; }
@@ -92,7 +100,7 @@
   td { padding: 8px 6px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
   tr:hover td { background: var(--card-2); }
   td b { color: var(--ink); font-weight: 600; }
-  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+  .pill { white-space: nowrap; display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
   .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
   .pill.up { color: var(--good); } .pill.up::before { background: var(--good); }
   .pill.down { color: var(--error-text); } .pill.down::before { background: var(--critical); }
@@ -103,7 +111,7 @@
   .error { color: var(--error-text); } .warn { color: var(--warning); } .ok { color: var(--good); }
   .small-text { font-size: 12px; color: var(--muted); margin: 6px 0; }
   hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
-  #graph { height: 460px; border: 1px solid var(--line); border-radius: 4px;
+  #graph { flex: 1; min-height: 200px; border: 1px solid var(--line); border-radius: 4px;
            background: radial-gradient(circle at 50% 40%, #1f2a22 0%, #121211 70%); }
   #msg:empty::before { content: "Results of discovery, graph questions and device history appear here."; color: var(--muted); font-size: 13px; }
   #plan:empty::before { content: "Type what you want, then click Make a plan. English or Arabic both work."; color: var(--muted); font-size: 13px; }
@@ -116,28 +124,26 @@
   .hist .when { color: var(--muted); font-size: 12px; } .hist .tag { margin-left: 6px; }
   .hist ul { margin: 4px 0; font-family: monospace; direction: ltr; }
 
-  @media (max-width: 1200px) { .tiles { grid-template-columns: repeat(3, 1fr); }
-                               .r-overview, .r-main, .r-bottom { grid-template-columns: 1fr 1fr; } }
-  @media (max-width: 760px)  { .tiles { grid-template-columns: repeat(2, 1fr); }
-                               .r-overview, .r-main, .r-bottom { grid-template-columns: 1fr; }
-                               .nav, .updated { display: none; } }
+  /* small screens: go back to a normal scrolling page */
+  @media (max-width: 1100px) {
+    body { overflow: auto; height: auto; } .page { flex: none; }
+    .main { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(3, 1fr); }
+    .card.grow { min-height: 380px; } #graph { height: 380px; }
+  }
+  @media (max-width: 600px) { .tiles { grid-template-columns: repeat(2, 1fr); } .charts { grid-template-columns: 1fr; } }
 </style>
 </head>
 <body>
 
 <div class="topbar">
   <div class="brand"><span class="logo">IBN</span> Network Monitor</div>
-  <nav class="nav">
-    <a href="#overview">Overview</a><a href="#intent-card">Intent</a><a href="#topology">Topology</a>
-    <a href="#inventory">Devices</a><a href="#tools">Tools</a>
-  </nav>
   <span class="updated" id="updated"></span>
 </div>
 
 <main class="page">
 
   <!-- tiles (filled by updateStats) -->
-  <section class="row tiles" id="overview">
+  <section class="tiles">
     <div class="card tile"><div class="icon" data-icon="router"></div><div><div class="label">Routers</div><div class="num" id="t-router">0</div></div></div>
     <div class="card tile"><div class="icon" data-icon="switch"></div><div><div class="label">Switches</div><div class="num" id="t-switch">0</div></div></div>
     <div class="card tile"><div class="icon" data-icon="firewall"></div><div><div class="label">Firewalls</div><div class="num" id="t-firewall">0</div></div></div>
@@ -146,115 +152,110 @@
     <div class="card tile down"><div class="icon" data-icon="alert"></div><div><div class="label">Down</div><div class="num" id="t-down">0</div></div></div>
   </section>
 
-  <!-- intent + health + vendors -->
-  <section class="row r-overview">
-    <div class="card" id="intent-card">
-      <h2>What do you want? <span class="hint">the AI writes the commands, you approve them</span></h2>
-      <textarea id="intent" rows="4" dir="auto" placeholder="e.g. Create VLAN 10 named Sales on SW1"></textarea>
-      <button class="big" onclick="sendIntent()">Make a plan</button>
-    </div>
-    <div class="card">
-      <h2>Network health</h2>
-      <div class="donut-wrap" id="health-chart"></div>
-    </div>
-    <div class="card">
-      <h2>Devices by vendor</h2>
-      <div class="donut-wrap" id="vendor-chart"></div>
-    </div>
-  </section>
+  <section class="main">
 
-  <!-- topology + plan -->
-  <section class="row r-main">
-    <div class="card" id="topology">
-      <h2>Network topology <span class="hint">drag boxes, scroll to zoom (remembered), click a line to select it</span></h2>
-      <div id="graph"></div>
-      <button class="secondary" onclick="centerView()">Center view</button>
-      <button id="remove-link" class="danger" style="display:none" onclick="removeLink()"></button>
+    <!-- LEFT: request -> plan -> approve -->
+    <div class="col">
+      <div class="card">
+        <h2>What do you want?</h2>
+        <textarea id="intent" rows="3" dir="auto" placeholder="e.g. Create VLAN 10 named Sales on SW1"></textarea>
+        <button class="big" onclick="sendIntent()">Make a plan</button>
+      </div>
+      <div class="card grow">
+        <h2>Plan &amp; result</h2>
+        <div id="plan" class="fill"></div>
+      </div>
     </div>
-    <div class="card" id="plan-card">
-      <h2>Plan &amp; result</h2>
-      <div id="plan" class="scroll"></div>
-    </div>
-  </section>
 
-  <!-- inventory + tools -->
-  <section class="row r-bottom">
-    <div class="stack">
-      <div class="card" id="inventory">
-        <h2>Device inventory
-          <input id="search" placeholder="Search name, IP, vendor..." style="width:220px;margin:0 0 0 auto" oninput="renderTable()">
+    <!-- MIDDLE: topology + charts -->
+    <div class="col">
+      <div class="card grow">
+        <h2>Network topology <span class="hint" title="Drag boxes, scroll to zoom (remembered), click a line to select it">drag &middot; zoom &middot; click a line</span>
+          <button class="small secondary" style="margin-left:auto;white-space:nowrap" onclick="centerView()">Center view</button>
+          <button id="remove-link" class="small danger" style="display:none" onclick="removeLink()"></button>
         </h2>
-        <div class="scroll"><table id="devices"></table></div>
+        <div id="graph"></div>
       </div>
-      <div class="card">
-        <h2>Details &amp; results</h2>
-        <div id="msg" class="scroll" dir="auto"></div>
+      <div class="charts">
+        <div class="card"><h2>Network health</h2><div class="donut-wrap" id="health-chart"></div></div>
+        <div class="card"><h2>Devices by vendor</h2><div class="donut-wrap" id="vendor-chart"></div></div>
+      </div>
+    </div>
+
+    <!-- RIGHT: tabs -->
+    <div class="col">
+      <div class="card grow">
+        <div class="tabs">
+          <button data-tab="devices" class="active" onclick="showTab('devices')">Devices</button>
+          <button data-tab="tools" onclick="showTab('tools')">Tools</button>
+          <button data-tab="results" onclick="showTab('results')">Results</button>
+        </div>
+        <div class="fill">
+
+          <div class="tab active" id="tab-devices">
+            <input id="search" placeholder="Search name, IP, vendor, type..." oninput="renderTable()">
+            <table id="devices"></table>
+          </div>
+
+          <div class="tab" id="tab-tools">
+            <h3>Discovery</h3>
+            <div class="inline">
+              <input id="subnet" placeholder="Subnet, e.g. 192.168.1.0/24">
+              <button class="secondary" onclick="discover()">Scan (ping)</button>
+            </div>
+            <button class="secondary" onclick="findLinks()">Find links &amp; IPs</button>
+            <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
+
+            <h3>Ask the network graph</h3>
+            <div class="inline">
+              <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
+              <button class="secondary" onclick="findPath()">Path</button>
+            </div>
+            <div class="inline">
+              <input id="g-dev" placeholder="Device (R2)">
+              <button class="secondary" onclick="whatIfDown()">If it goes down?</button>
+            </div>
+            <button class="secondary" onclick="criticalDevices()">Critical devices</button>
+
+            <h3>Add / edit a device</h3>
+            <p class="small-text">Same name = update. Login empty = use the one in <b>.env</b>.</p>
+            <div class="inline">
+              <input id="d-name" placeholder="Name (R1)">
+              <input id="d-ip" placeholder="IP (192.168.1.1)">
+            </div>
+            <div class="inline">
+              <select id="d-vendor">
+                {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
+                {% endfor %}
+              </select>
+              <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
+            </div>
+            <div class="inline">
+              <input id="d-username" placeholder="Login username (optional)">
+              <input id="d-password" type="password" placeholder="Login password (optional)">
+            </div>
+            <button onclick="addDevice()">Save device</button>
+
+            <h3>Link two devices</h3>
+            <div class="inline">
+              <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
+              <button class="secondary" onclick="addLink()">Link</button>
+            </div>
+
+            <h3>New lab</h3>
+            <p class="small-text">Deletes every device, link and history entry.</p>
+            <button class="danger" onclick="newTopology(this)">Start a new topology</button>
+          </div>
+
+          <div class="tab" id="tab-results">
+            <div id="msg" dir="auto"></div>
+          </div>
+
+        </div>
       </div>
     </div>
 
-    <div class="stack" id="tools">
-      <div class="card">
-        <h2>Discovery</h2>
-        <div class="inline">
-          <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
-          <button class="secondary" onclick="discover()">Scan (ping)</button>
-        </div>
-        <button class="secondary" onclick="findLinks()">Find links &amp; IPs (CDP)</button>
-        <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
-        <hr>
-        <p class="small-text">New lab? This deletes every device, link and history entry.</p>
-        <button class="danger" onclick="newTopology(this)">Start a new topology</button>
-      </div>
-
-      <div class="card">
-        <h2>Ask the network graph</h2>
-        <div class="inline">
-          <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
-          <button class="secondary" onclick="findPath()">Path</button>
-        </div>
-        <div class="inline">
-          <input id="g-dev" placeholder="Device (R2)">
-          <button class="secondary" onclick="whatIfDown()">What if it goes down?</button>
-        </div>
-        <button class="secondary" onclick="criticalDevices()">Critical devices</button>
-      </div>
-
-      <div class="card">
-        <details>
-          <summary>Add / edit a device</summary>
-          <p class="small-text">Same name = update. Use vendor <b>simulated</b> to test without real devices.
-             Login empty = use the one in <b>.env</b>.</p>
-          <div class="inline">
-            <input id="d-name" placeholder="Name (R1)">
-            <input id="d-ip" placeholder="IP (192.168.1.1)">
-          </div>
-          <div class="inline">
-            <select id="d-vendor">
-              {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
-              {% endfor %}
-            </select>
-            <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
-          </div>
-          <div class="inline">
-            <input id="d-username" placeholder="Login username (optional)">
-            <input id="d-password" type="password" placeholder="Login password (optional)">
-          </div>
-          <button onclick="addDevice()">Save device</button>
-        </details>
-      </div>
-
-      <div class="card">
-        <details>
-          <summary>Link two devices</summary>
-          <div class="inline">
-            <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
-            <button class="secondary" onclick="addLink()">Link</button>
-          </div>
-        </details>
-      </div>
-    </div>
   </section>
-
 </main>
 
 <script>
@@ -395,9 +396,10 @@ function updateStats(t) {
 
 // A ring chart drawn with SVG: one arc per item, a small gap between arcs, the total in the middle.
 function donut(id, total, items) {
-  const r = 50, c = 2 * Math.PI * r, gap = total > 1 ? 2 : 0;
+  const parts = items.filter(i => i.value > 0);
+  const r = 50, c = 2 * Math.PI * r, gap = parts.length > 1 ? 2 : 0;  // no gap when one part = full ring
   let offset = 0, arcs = "";
-  for (const it of items.filter(i => i.value > 0)) {
+  for (const it of parts) {
     const len = c * it.value / total;
     arcs += `<circle class="seg" cx="60" cy="60" r="${r}" fill="none" stroke="${it.color}" stroke-width="14"
                stroke-dasharray="${Math.max(len - gap, 0.5)} ${c}" stroke-dashoffset="${-offset}">
@@ -416,21 +418,29 @@ function renderTable() {
   const q = (document.getElementById("search").value || "").toLowerCase();
   const list = (window.devices || []).filter(d =>
     [d.name, d.ip, d.vendor, deviceType(d)].join(" ").toLowerCase().includes(q));
-  let rows = "<tr><th>Device</th><th>Type</th><th>Vendor</th><th>IP address</th><th>State</th><th></th></tr>";
+  let rows = "<tr><th>Device</th><th>IP / state</th><th></th></tr>";
   for (const d of list) {
     const state = d.state === "up" || d.state === "down" ? d.state : "unknown";
-    rows += `<tr><td><b>${esc(d.name)}</b></td><td><span class="tag">${deviceType(d)}</span></td>
-      <td>${esc(d.vendor)}</td><td>${esc(d.ip)}</td>
-      <td><span class="pill ${state}">${esc(d.state || "not checked")}</span></td>
+    rows += `<tr><td><b>${esc(d.name)}</b> <span class="tag">${deviceType(d)}</span>
+      <div class="small-text" style="margin:2px 0 0">${esc(d.vendor)}</div></td>
+      <td>${esc(d.ip)}<br><span class="pill ${state}">${esc(d.state || "not checked")}</span></td>
       <td style="white-space:nowrap;text-align:right">
           <button class="small secondary" onclick="history_('${esc(d.name)}')">History</button>
           <button class="small secondary" onclick="edit('${esc(d.name)}')">Edit</button>
           <button class="small danger" onclick="del('${esc(d.name)}', this)">X</button></td></tr>`;
   }
-  if (!list.length) rows += `<tr><td colspan="6" class="small-text">${q ? "No device matches the search."
+  if (!list.length) rows += `<tr><td colspan="3" class="small-text">${q ? "No device matches the search."
                                  : "No devices yet: scan a subnet or add one in Tools."}</td></tr>`;
   document.getElementById("devices").innerHTML = rows;
 }
+
+// Tabs on the right side.
+function showTab(name) {
+  document.querySelectorAll(".tabs button").forEach(b => b.classList.toggle("active", b.dataset.tab === name));
+  document.querySelectorAll(".tab").forEach(t => t.classList.toggle("active", t.id === "tab-" + name));
+}
+// When something writes into "Results" (history, discovery, graph answers...), show that tab.
+new MutationObserver(() => showTab("results")).observe(document.getElementById("msg"), {childList: true});
 
 // Small line icons for the tiles.
 const ICONS = {
@@ -507,8 +517,8 @@ async function criticalDevices() {
 
 function edit(name) {
   const d = window.devices.find(x => x.name === name);
-  const form = document.getElementById("d-name").closest("details");
-  form.open = true; form.scrollIntoView({behavior: "smooth", block: "center"});
+  showTab("tools");
+  document.getElementById("d-name").scrollIntoView({behavior: "smooth", block: "center"});
   for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
   document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
 }

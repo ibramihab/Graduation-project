@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Dashboard fits on one screen
+- 🟡 `ibn/interface/templates/index.html`: everything fits in the window, no page scrolling
+  (long lists scroll inside their own box). Right side has tabs: **Devices | Tools | Results**;
+  Results opens by itself when there's something new to show. Ring charts are now a full
+  circle at 100%. Small screens (under 1100 px) still get a normal scrolling page.
+
 ### Dark "network monitor" dashboard
 - 🟡 `ibn/interface/templates/index.html`: new dark design. Top navigation bar; tiles for
   routers / switches / firewalls / other devices / links / down; **Network health** and
