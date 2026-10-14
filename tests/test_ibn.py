@@ -397,6 +397,11 @@ def test_change_only_the_password(kb):
     page_devices = client.get("/api/topology").json["devices"]
     r2 = next(d for d in page_devices if d["name"] == "R2")
     assert r2["has_password"] is True and "password" not in r2
+    r1 = next(d for d in page_devices if d["name"] == "R1")
+    assert r1["has_username"] is True and "username" not in r1  # the username is hidden too
+    # editing without touching the hidden username (the page doesn't send it) keeps it
+    client.post("/api/devices", json={"name": "R1", "ip": "10.0.0.1", "password": "newer"})
+    assert kb.get_device("R1")["username"] == "admin" and kb.get_device("R1")["password"] == "newer"
 
 
 def test_empty_password_keeps_the_saved_one(kb):

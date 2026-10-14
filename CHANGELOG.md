@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### A device's own username is hidden too
+- 🟡 Like the password, a device's saved username is never sent to the page (`has_username` tells
+  it one exists). Edit shows ●●●●●● in the username box. Rules unchanged: leave the dots = keep it,
+  empty the box = use the `.env` username, type a new one = replace it.
+- Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py`.
+
 ### Loading spinners + nicer "saved" message
 - 🟡 `ibn/interface/templates/index.html`: buttons that wait for the server (Make a plan, Approve,
   Scan, Find links, Refresh up/down, Path, What-if, Critical devices, Save device, Link, Start a new

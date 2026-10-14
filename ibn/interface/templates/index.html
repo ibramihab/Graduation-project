@@ -250,7 +250,8 @@
               <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
             </div>
             <div class="inline">
-              <input id="d-username" placeholder="Login username (optional)">
+              <input id="d-username" placeholder="Login username (optional)" autocomplete="off"
+                     onfocus="this.select()" oninput="usernameChanged(this)">
               <input id="d-password" type="password" placeholder="Login password (optional)">
             </div>
             <button onclick="run(this, addDevice)">Save device</button> <span id="device-saved"></span>
@@ -549,10 +550,25 @@ function edit(name) {
   const d = window.devices.find(x => x.name === name);
   showTab("tools");
   document.getElementById("d-name").scrollIntoView({behavior: "smooth", block: "center"});
-  for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
+  for (const k of ["name", "ip", "vendor"]) document.getElementById("d-" + k).value = d[k] || "";
+  document.getElementById("d-protocol").value = d.protocol || "ssh";
+  // A saved username is hidden like the password: the box shows dots. Leave it = keep it,
+  // empty it = use the .env username, type a new one = replace it (same rules as before).
+  const user = document.getElementById("d-username");
+  if (d.has_username) { user.value = HIDDEN; user.type = "password"; user.dataset.hidden = "1"; }
+  else resetUsernameBox();
   const pw = document.getElementById("d-password");
   pw.value = "";  // never shown; leave empty to keep the saved one
   pw.placeholder = d.has_password ? "New password (empty = keep the saved one)" : "Login password (optional)";
+}
+const HIDDEN = "••••••";  // what the username box shows for a saved (hidden) username
+function resetUsernameBox() {
+  const user = document.getElementById("d-username");
+  user.value = ""; user.type = "text"; delete user.dataset.hidden;
+}
+// As soon as you change the dots, the box holds a real value again (visible while typing).
+function usernameChanged(box) {
+  if (box.dataset.hidden && box.value !== HIDDEN) { delete box.dataset.hidden; box.type = "text"; }
 }
 // A short green "✓ saved" next to the button; it disappears after a few seconds.
 function tick(id, text) {
@@ -565,11 +581,13 @@ function tick(id, text) {
 async function addDevice() {
   const d = {};
   for (const k of ["name", "ip", "vendor", "protocol", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
+  if (document.getElementById("d-username").dataset.hidden) delete d.username;  // dots untouched = keep it
   let r;
   try { r = await post("/api/devices", d); } catch (e) { r = {error: "The server did not answer."}; }
   if (!r.ok) return say(`<span class="error">Device not saved: ${esc(r.error || "unknown error")}</span>`);
   tick("device-saved", `${d.name} saved`);
-  for (const k of ["name", "ip", "username", "password"]) document.getElementById("d-" + k).value = "";
+  for (const k of ["name", "ip", "password"]) document.getElementById("d-" + k).value = "";
+  resetUsernameBox();
   document.getElementById("d-password").placeholder = "Login password (optional)";
   document.getElementById("d-name").focus();
   load();

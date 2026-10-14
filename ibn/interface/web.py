@@ -32,9 +32,12 @@ def create_app(kb=None, llm=None) -> Flask:
     # ---- knowledge base: devices, links, history ----
     @app.get("/api/topology")
     def topology():
-        # passwords are never sent to the page; it only learns whether one is saved
-        devices = [{**{k: v for k, v in d.items() if k not in ("password", "last_config")},
-                    "has_password": bool(d.get("password"))} for d in kb.list_devices()]
+        # a device's own username and password are never sent to the page;
+        # it only learns whether they are saved
+        hidden = ("username", "password", "last_config")
+        devices = [{**{k: v for k, v in d.items() if k not in hidden},
+                    "has_username": bool(d.get("username")), "has_password": bool(d.get("password"))}
+                   for d in kb.list_devices()]
         names = {d["name"] for d in devices}
         links = [l for l in kb.list_links() if l["a"] in names and l["b"] in names]  # skip broken links
         return jsonify({"devices": devices, "links": links})
