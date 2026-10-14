@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Refresh up/down: no false "down" after a device comes back
+- 🟡 `ibn/infrastructure/discovery.py`: sends 2 pings instead of 1 (the first one is often
+  dropped while the router re-learns the device's MAC address), and only counts a real reply
+  (`TTL=`), not Windows' "Destination host unreachable".
+- `tests/test_ibn.py`: 1 new test.
+
 ### Manual links: names are matched, errors are shown
 - 🟡 **Link two devices** now ignores CAPITALS and extra spaces (`r1 ` = `R1`). Before, a link
   with a slightly different name was saved but never drawn, with no error.

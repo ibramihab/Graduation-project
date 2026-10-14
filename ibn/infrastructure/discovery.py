@@ -20,11 +20,17 @@ PORTS = {22: "ssh", 23: "telnet", 80: "http"}
 
 
 def ping(ip: str) -> bool:
+    """True if the device answers. We send 2 pings: right after a device comes back,
+    the router in between often drops the FIRST packet while it looks up the MAC
+    address (ARP), so one lost ping doesn't mean "down"."""
     if platform.system() == "Windows":
-        command = ["ping", "-n", "1", "-w", "1000", ip]
+        command = ["ping", "-n", "2", "-w", "1000", ip]
     else:
-        command = ["ping", "-c", "1", "-W", "1", ip]
-    return subprocess.run(command, capture_output=True).returncode == 0
+        command = ["ping", "-c", "2", "-W", "1", ip]
+    result = subprocess.run(command, capture_output=True, text=True, errors="ignore")
+    # A real answer contains "TTL=". (Windows ping can "succeed" on a
+    # "Destination host unreachable" message, which is not an answer from the device.)
+    return result.returncode == 0 and "ttl=" in result.stdout.lower()
 
 
 def open_ports(ip: str) -> list[str]:

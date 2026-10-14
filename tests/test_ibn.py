@@ -419,3 +419,19 @@ def test_manual_link_names_ignore_capitals_and_spaces(kb):
     assert client.post("/api/links", json={"a": "R1", "b": "r1"}).json["ok"] is False
     links = client.get("/api/topology").json["links"]
     assert all(l["a"] in ("R1", "SW1") and l["b"] in ("R1", "SW1") for l in links)
+
+
+def test_ping_counts_a_real_reply_even_if_the_first_packet_is_lost(monkeypatch):
+    from ibn.infrastructure import discovery
+
+    class Result:
+        def __init__(self, code, out): self.returncode, self.stdout = code, out
+    replies = {
+        "lost-then-ok": Result(0, "Request timed out.\nReply from 10.0.0.1: bytes=32 time=2ms TTL=255"),
+        "unreachable": Result(0, "Reply from 10.0.0.9: Destination host unreachable."),
+        "nothing": Result(1, "Request timed out.\nRequest timed out."),
+    }
+    monkeypatch.setattr(discovery.subprocess, "run", lambda command, **kw: replies[command[-1]])
+    assert discovery.ping("lost-then-ok") is True
+    assert discovery.ping("unreachable") is False
+    assert discovery.ping("nothing") is False
