@@ -35,7 +35,9 @@ def create_app(kb=None, llm=None) -> Flask:
         # passwords are never sent to the page; it only learns whether one is saved
         devices = [{**{k: v for k, v in d.items() if k not in ("password", "last_config")},
                     "has_password": bool(d.get("password"))} for d in kb.list_devices()]
-        return jsonify({"devices": devices, "links": kb.list_links()})
+        names = {d["name"] for d in devices}
+        links = [l for l in kb.list_links() if l["a"] in names and l["b"] in names]  # skip broken links
+        return jsonify({"devices": devices, "links": links})
 
     @app.post("/api/devices")
     def add_device():
@@ -63,8 +65,17 @@ def create_app(kb=None, llm=None) -> Flask:
 
     @app.post("/api/links")
     def add_link():
-        kb.add_link(request.json["a"], request.json["b"], manual=True)
-        return jsonify({"ok": True})
+        # Match the typed names to real devices, ignoring CAPITALS and extra spaces ("r1 " -> "R1").
+        by_name = {d["name"].strip().lower(): d["name"] for d in kb.list_devices()}
+        a = by_name.get(str(request.json.get("a", "")).strip().lower())
+        b = by_name.get(str(request.json.get("b", "")).strip().lower())
+        if not a or not b:
+            missing = [x for x, found in ((request.json.get("a"), a), (request.json.get("b"), b)) if not found]
+            return jsonify({"ok": False, "error": f"No device named {', '.join(map(repr, missing))}."})
+        if a == b:
+            return jsonify({"ok": False, "error": "Choose two different devices."})
+        kb.add_link(a, b, manual=True)
+        return jsonify({"ok": True, "a": a, "b": b})
 
     @app.delete("/api/links")
     def delete_link():

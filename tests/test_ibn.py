@@ -409,3 +409,13 @@ def test_empty_password_keeps_the_saved_one(kb):
 def test_device_needs_name_and_ip(kb):
     client = create_app(kb, FakeLLM({})).test_client()
     assert client.post("/api/devices", json={"name": "R9", "ip": ""}).json["ok"] is False
+
+
+def test_manual_link_names_ignore_capitals_and_spaces(kb):
+    client = create_app(kb, FakeLLM({})).test_client()
+    r = client.post("/api/links", json={"a": " r1", "b": "sw1 "}).json
+    assert r["ok"] and (r["a"], r["b"]) == ("R1", "SW1")
+    assert client.post("/api/links", json={"a": "R1", "b": "R9"}).json["ok"] is False
+    assert client.post("/api/links", json={"a": "R1", "b": "r1"}).json["ok"] is False
+    links = client.get("/api/topology").json["links"]
+    assert all(l["a"] in ("R1", "SW1") and l["b"] in ("R1", "SW1") for l in links)

@@ -548,8 +548,9 @@ async function addDevice() {
 async function addLink() {
   const a = document.getElementById("l-a").value, b = document.getElementById("l-b").value;
   if (!a || !b) return say(`<span class="error">Type both device names to link them.</span>`);
-  await post("/api/links", {a, b});
-  tick("link-saved", `${a} — ${b} linked`);
+  const r = await post("/api/links", {a, b});
+  if (!r.ok) return say(`<span class="error">Link not added: ${esc(r.error)}</span>`);
+  tick("link-saved", `${r.a} — ${r.b} linked`);
   document.getElementById("l-a").value = document.getElementById("l-b").value = "";
   load();
 }

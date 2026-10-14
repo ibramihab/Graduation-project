@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Manual links: names are matched, errors are shown
+- 🟡 **Link two devices** now ignores CAPITALS and extra spaces (`r1 ` = `R1`). Before, a link
+  with a slightly different name was saved but never drawn, with no error.
+- 🟡 A name that doesn't exist (or the same device twice) shows an error in Results.
+- 🟡 Old broken links (to names that don't exist) are no longer sent to the page.
+- Files: `ibn/interface/web.py`, `index.html`, `tests/test_ibn.py` (1 new test).
+
 ### Change only a device's password
 - 🟡 Edit a device → type only a new password → Save: the password changes and the username
   stays (its own, or the `.env` one). Before, a device using the `.env` username lost the new
