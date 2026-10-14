@@ -20,6 +20,7 @@ class KnowledgeBase(ABC):
     # ---- devices (graph nodes) ----
     @abstractmethod
     def add_device(self, device: dict) -> None:
+        """Add a device, or update it if the name exists. A field set to None is removed."""
         """Create the device, or update it if a device with that name exists."""
 
     @abstractmethod

@@ -39,6 +39,13 @@ def create_app(kb=None, llm=None) -> Flask:
     @app.post("/api/devices")
     def add_device():
         device = {k: v for k, v in request.json.items() if v not in ("", None)}
+        if not device.get("name") or not device.get("ip"):
+            return jsonify({"ok": False, "error": "Name and IP are required."})
+        # Username box left empty = "use the login from .env": forget this device's own
+        # username AND password. (An empty password box alone keeps the saved password,
+        # because the page never shows saved passwords.)
+        if "username" in request.json and not request.json["username"]:
+            device["username"] = device["password"] = None
         kb.add_device(device)
         return jsonify({"ok": True})
 

@@ -7,6 +7,15 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Device login fix + faster adding
+- 🟡 Editing a device and **emptying the username** now really removes its own login, so it
+  uses the one in `.env` again (before, the old username stayed). An empty password alone
+  still keeps the saved password. Name and IP are now required.
+- 🟡 **Save device / Link** show a green ✓ next to the button and clear the form for the next one;
+  you stay in Tools. Only an error opens the Results tab.
+- Files: `ibn/interface/web.py`, `index.html`, `ibn/knowledge/file_graph.py` (a field set to
+  None is removed), `ibn/knowledge/base.py` (docstring), `tests/test_ibn.py` (3 new tests).
+
 ### Dashboard fits on one screen
 - 🟡 `ibn/interface/templates/index.html`: everything fits in the window, no page scrolling
   (long lists scroll inside their own box). Right side has tabs: **Devices | Tools | Results**;

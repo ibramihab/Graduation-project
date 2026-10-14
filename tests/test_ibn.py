@@ -368,3 +368,27 @@ def test_find_links_keeps_links_of_devices_it_could_not_reach(kb, monkeypatch):
     errors = discovery.discover_links(kb)
     assert any(e.startswith("R1:") for e in errors) and any(e.startswith("R2:") for e in errors)
     assert {frozenset((l["a"], l["b"])) for l in kb.list_links()} >= {frozenset(("R1", "R2"))}
+
+
+def test_clearing_the_username_goes_back_to_env_login(kb):
+    client = create_app(kb, FakeLLM({})).test_client()
+    client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "vendor": "cisco_ios",
+                                      "username": "wrong", "password": "secret"})
+    assert kb.get_device("R2")["username"] == "wrong"
+    # edit: username box emptied, password box empty
+    client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "vendor": "cisco_ios",
+                                      "username": "", "password": ""})
+    device = kb.get_device("R2")
+    assert not device.get("username") and not device.get("password")
+
+
+def test_empty_password_keeps_the_saved_one(kb):
+    client = create_app(kb, FakeLLM({})).test_client()
+    client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "username": "admin", "password": "p1"})
+    client.post("/api/devices", json={"name": "R2", "ip": "10.0.0.2", "username": "admin", "password": ""})
+    assert kb.get_device("R2")["password"] == "p1"
+
+
+def test_device_needs_name_and_ip(kb):
+    client = create_app(kb, FakeLLM({})).test_client()
+    assert client.post("/api/devices", json={"name": "R9", "ip": ""}).json["ok"] is False

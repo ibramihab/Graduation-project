@@ -39,7 +39,9 @@ class FileGraph(KnowledgeBase):
     def add_device(self, device):
         with self.lock:
             existing = self.data["devices"].get(device["name"], {})
-            self.data["devices"][device["name"]] = {**existing, **device}
+            merged = {**existing, **device}
+            # a field set to None is removed (e.g. forget a device's own login)
+            self.data["devices"][device["name"]] = {k: v for k, v in merged.items() if v is not None}
             self._save()
 
     def get_device(self, name):

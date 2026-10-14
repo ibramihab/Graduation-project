@@ -218,7 +218,8 @@
             <button class="secondary" onclick="criticalDevices()">Critical devices</button>
 
             <h3>Add / edit a device</h3>
-            <p class="small-text">Same name = update. Login empty = use the one in <b>.env</b>.</p>
+            <p class="small-text">Same name = update. Username empty = use the login in <b>.env</b>.
+               Password empty = keep the saved one.</p>
             <div class="inline">
               <input id="d-name" placeholder="Name (R1)">
               <input id="d-ip" placeholder="IP (192.168.1.1)">
@@ -234,13 +235,14 @@
               <input id="d-username" placeholder="Login username (optional)">
               <input id="d-password" type="password" placeholder="Login password (optional)">
             </div>
-            <button onclick="addDevice()">Save device</button>
+            <button onclick="addDevice()">Save device</button> <span id="device-saved" class="ok"></span>
 
             <h3>Link two devices</h3>
             <div class="inline">
               <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
               <button class="secondary" onclick="addLink()">Link</button>
             </div>
+            <span id="link-saved" class="ok"></span>
 
             <h3>New lab</h3>
             <p class="small-text">Deletes every device, link and history entry.</p>
@@ -522,14 +524,30 @@ function edit(name) {
   for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
   document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
 }
+// A short green "✓ saved" next to the button; it disappears after a few seconds.
+function tick(id, text) {
+  const el = document.getElementById(id);
+  el.textContent = "✓ " + text;
+  clearTimeout(el.timer); el.timer = setTimeout(() => el.textContent = "", 4000);
+}
+// Save a device and stay here (ready for the next one). Only a problem goes to the Results tab.
 async function addDevice() {
   const d = {};
   for (const k of ["name", "ip", "vendor", "protocol", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
-  document.getElementById("d-password").value = "";
-  show(await post("/api/devices", d)); load();
+  let r;
+  try { r = await post("/api/devices", d); } catch (e) { r = {error: "The server did not answer."}; }
+  if (!r.ok) return say(`<span class="error">Device not saved: ${esc(r.error || "unknown error")}</span>`);
+  tick("device-saved", `${d.name} saved`);
+  for (const k of ["name", "ip", "username", "password"]) document.getElementById("d-" + k).value = "";
+  document.getElementById("d-name").focus();
+  load();
 }
 async function addLink() {
-  show(await post("/api/links", {a: document.getElementById("l-a").value, b: document.getElementById("l-b").value}));
+  const a = document.getElementById("l-a").value, b = document.getElementById("l-b").value;
+  if (!a || !b) return say(`<span class="error">Type both device names to link them.</span>`);
+  await post("/api/links", {a, b});
+  tick("link-saved", `${a} — ${b} linked`);
+  document.getElementById("l-a").value = document.getElementById("l-b").value = "";
   load();
 }
 // First click: the button asks "Sure?". Second click (within 3 seconds): delete.
