@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Loading spinners + nicer "saved" message
+- 🟡 `ibn/interface/templates/index.html`: buttons that wait for the server (Make a plan, Approve,
+  Scan, Find links, Refresh up/down, Path, What-if, Critical devices, Save device, Link, Start a new
+  topology) show a small spinning circle and can't be clicked twice while working. The plan box
+  shows "The AI is writing the plan..." with a spinner.
+- 🟡 "Saved" and "linked" messages now show a white check mark in a green circle.
+
 ### Refresh up/down: no false "down" after a device comes back
 - 🟡 `ibn/infrastructure/discovery.py`: sends 2 pings instead of 1 (the first one is often
   dropped while the router re-learns the device's MAC address).
