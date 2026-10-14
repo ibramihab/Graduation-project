@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### New look for the web page (charcoal + green monitoring theme)
+- 🟡 `index.html` only: new colors, a left icon bar (Intent, Topology, Devices, Tools, Results),
+  a header with a green/red status arrow and vendor chips, the device search moved to the top bar,
+  big-number cards with an **Availability** gauge (devices up out of those checked), thicker rings.
+  Every button, URL and rule works as before; still one screen, no scrolling.
+
 ### A device's own username is hidden too
 - 🟡 Like the password, a device's saved username is never sent to the page (`has_username` tells
   it one exists). Edit shows ●●●●●● in the username box. Rules unchanged: leave the dots = keep it,
