@@ -3,195 +3,257 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Simple IBN</title>
+<title>IBN Network Monitor</title>
 <!-- vis-network draws the topology graph (bundled in static/ so it works without internet) -->
 <script src="/static/vis-network.min.js"></script>
 <style>
+  /* ---------- colors (dark "network operations" theme) ---------- */
   :root {
-    --bg: #eef1f5; --card: #ffffff; --ink: #1f2937; --muted: #6b7280; --line: #e5e7eb;
-    --brand: #0b5345; --brand-2: #117864; --navy: #111827;
-    --ok: #1e8449; --ok-bg: #e9f7ef; --bad: #c0392b; --bad-bg: #fdedec; --warn: #b9770e;
+    color-scheme: dark;
+    --page: #0d0d0d; --card: #1a1a19; --card-2: #222220; --line: rgba(255,255,255,0.10);
+    --ink: #f0efec; --ink-2: #c3c2b7; --muted: #898781; --accent: #0ca30c;
+    --good: #0ca30c; --warning: #fab219; --critical: #d03b3b; --error-text: #e66767;
+    /* chart colors: fixed order, checked for color-blind readability on --card */
+    --s1: #3987e5; --s2: #d95926; --s3: #199e70; --s4: #c98500;
+    --s5: #d55181; --s6: #008300; --s7: #9085e9; --s8: #e66767;
   }
   * { box-sizing: border-box; }
-  body { font-family: system-ui, "Segoe UI", Tahoma, sans-serif; margin: 0; background: var(--bg); color: var(--ink); }
+  body { margin: 0; background: var(--page); color: var(--ink);
+         font-family: system-ui, -apple-system, "Segoe UI", Tahoma, sans-serif; font-size: 14px; }
+  a { color: inherit; }
 
-  /* top bar */
-  .topbar { background: var(--navy); color: #fff; padding: 12px 20px; display: flex; align-items: center; gap: 12px; }
-  .topbar .logo { background: var(--brand-2); border-radius: 8px; padding: 4px 10px; font-weight: 700; }
-  .topbar .sub { color: #9ca3af; font-size: 14px; }
-  .topbar .updated { margin-left: auto; color: #9ca3af; font-size: 13px; }
+  /* ---------- top navigation ---------- */
+  .topbar { position: sticky; top: 0; z-index: 10; background: #111110; border-bottom: 1px solid var(--line);
+            display: flex; align-items: center; gap: 4px; padding: 0 16px; height: 48px; }
+  .brand { display: flex; align-items: center; gap: 8px; font-weight: 700; margin-right: 18px; }
+  .brand .logo { background: var(--accent); color: #fff; border-radius: 6px; padding: 2px 8px; font-size: 13px; }
+  .nav a { text-decoration: none; color: var(--ink-2); padding: 14px 12px; display: inline-block;
+           border-bottom: 2px solid transparent; }
+  .nav a:hover { color: var(--ink); border-bottom-color: var(--accent); }
+  .updated { margin-left: auto; color: var(--muted); font-size: 12px; }
 
-  /* status tiles */
-  .stats { display: grid; grid-template-columns: repeat(5, 1fr); gap: 12px; padding: 16px 16px 0; }
-  .stat { background: var(--card); border-radius: 10px; padding: 12px 16px; box-shadow: 0 1px 3px #0001; border-left: 4px solid var(--brand-2); }
-  .stat .num { font-size: 26px; font-weight: 700; }
-  .stat .label { color: var(--muted); font-size: 13px; }
-  .stat.up { border-color: var(--ok); } .stat.up .num { color: var(--ok); }
-  .stat.down { border-color: var(--bad); } .stat.down .num { color: var(--bad); }
-
-  /* 3 columns: intent | topology + results | devices + tools */
-  .grid { display: grid; grid-template-columns: minmax(300px, 1fr) minmax(380px, 1.5fr) minmax(320px, 1fr);
-          gap: 16px; padding: 16px; align-items: start; }
-  .col { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
-  .card { background: var(--card); border-radius: 10px; padding: 16px; box-shadow: 0 1px 3px #0001; }
-  .card h2 { margin: 0 0 10px; font-size: 16px; display: flex; align-items: center; gap: 8px; }
+  /* ---------- page grid ---------- */
+  .page { padding: 16px; display: flex; flex-direction: column; gap: 16px; }
+  .row { display: grid; gap: 16px; }
+  .tiles { grid-template-columns: repeat(6, 1fr); }
+  .r-overview { grid-template-columns: 1.4fr 1fr 1fr; }
+  .r-main { grid-template-columns: 2fr 1fr; align-items: start; }
+  .r-bottom { grid-template-columns: 2fr 1fr; align-items: start; }
+  .stack { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+  .card { background: var(--card); border: 1px solid var(--line); border-radius: 6px; padding: 16px; min-width: 0; }
+  .card h2 { margin: 0 0 12px; font-size: 13px; font-weight: 600; color: var(--ink-2);
+             display: flex; align-items: center; gap: 8px; }
   .card h2 .hint { font-weight: normal; color: var(--muted); font-size: 12px; }
-  .scroll { max-height: 520px; overflow: auto; }
+  .scroll { max-height: 460px; overflow: auto; }
 
-  textarea, input, select { width: 100%; padding: 8px 10px; margin: 4px 0; font: inherit;
-                            border: 1px solid #d1d5db; border-radius: 6px; background: #fff; }
-  textarea:focus, input:focus, select:focus { outline: 2px solid #a3e4d7; border-color: var(--brand-2); }
-  button { background: var(--brand); color: #fff; border: 0; padding: 8px 14px; border-radius: 6px;
-           cursor: pointer; margin: 4px 4px 4px 0; font: inherit; font-size: 14px; }
-  button:hover { filter: brightness(1.1); }
-  button.secondary { background: #4b5563; }
-  button.light { background: #eef2f7; color: var(--ink); }
-  button.danger { background: var(--bad); }
-  button.small { padding: 4px 8px; font-size: 12px; margin: 1px; }
+  /* ---------- tiles ---------- */
+  .tile { display: flex; align-items: center; gap: 12px; }
+  .tile .icon { width: 40px; height: 40px; border-radius: 6px; background: #13301a; color: var(--good);
+                display: grid; place-items: center; flex: 0 0 auto; }
+  .tile .icon svg { width: 22px; height: 22px; }
+  .tile .label { color: var(--muted); font-size: 12px; }
+  .tile .num { font-size: 24px; font-weight: 700; line-height: 1.2; }
+  .tile.down .icon { background: #3a1616; color: var(--critical); }
+
+  /* ---------- donut charts ---------- */
+  .donut-wrap { display: flex; align-items: center; gap: 20px; flex-wrap: wrap; }
+  .donut { position: relative; width: 120px; height: 120px; flex: 0 0 auto; }
+  .donut svg { width: 120px; height: 120px; transform: rotate(-90deg); }
+  .donut .center { position: absolute; inset: 0; display: grid; place-items: center;
+                   font-size: 26px; font-weight: 700; }
+  .donut circle.seg { transition: stroke-width .15s; cursor: default; }
+  .donut circle.seg:hover { stroke-width: 18; }
+  .legend { list-style: none; margin: 0; padding: 0; flex: 1; min-width: 140px; }
+  .legend li { display: flex; align-items: center; gap: 8px; padding: 3px 0; color: var(--ink-2); }
+  .legend .sw { width: 10px; height: 10px; border-radius: 2px; flex: 0 0 auto; }
+  .legend .val { margin-left: auto; color: var(--ink); font-variant-numeric: tabular-nums; }
+  .legend .pct { color: var(--muted); width: 44px; text-align: right; font-variant-numeric: tabular-nums; }
+
+  /* ---------- forms + buttons ---------- */
+  textarea, input, select { width: 100%; padding: 8px 10px; margin: 4px 0; font: inherit; color: var(--ink);
+                            background: #111110; border: 1px solid var(--line); border-radius: 4px; }
+  textarea:focus, input:focus, select:focus { outline: 1px solid var(--accent); border-color: var(--accent); }
+  ::placeholder { color: var(--muted); }
+  button { background: var(--accent); color: #fff; border: 0; padding: 8px 14px; border-radius: 4px;
+           cursor: pointer; margin: 4px 4px 4px 0; font: inherit; }
+  button:hover { filter: brightness(1.15); }
+  button.secondary { background: #2e2e2b; color: var(--ink); border: 1px solid var(--line); }
+  button.outline { background: transparent; color: var(--accent); border: 1px solid var(--accent); }
+  button.danger { background: var(--critical); }
+  button.small { padding: 3px 8px; font-size: 12px; margin: 1px; }
   .big { width: 100%; padding: 10px; font-size: 15px; }
+  .inline { display: flex; gap: 6px; align-items: center; } .inline > * { flex: 1; } .inline > button { flex: 0 0 auto; }
+  details > summary { cursor: pointer; color: var(--ink-2); font-weight: 600; }
 
-  pre { background: #111827; color: #d1d5db; padding: 10px; border-radius: 6px; overflow-x: auto;
-        white-space: pre-wrap; direction: ltr; text-align: left; font-size: 13px; }
-  table { width: 100%; border-collapse: collapse; font-size: 14px; }
-  td, th { border-bottom: 1px solid var(--line); padding: 7px 6px; text-align: left; }
-  th { color: var(--muted); font-weight: 600; font-size: 12px; text-transform: uppercase; }
-  .error { color: var(--bad); } .warn { color: var(--warn); } .ok { color: var(--ok); }
-  .pill { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 12px; font-weight: 600; }
-  .pill.up { background: var(--ok-bg); color: var(--ok); }
-  .pill.down { background: var(--bad-bg); color: var(--bad); }
-  .pill.unknown { background: #f3f4f6; color: var(--muted); }
-  #graph { height: 480px; border: 1px solid var(--line); border-radius: 8px; background: #fafbfc; }
-  .row { display: flex; gap: 6px; align-items: center; } .row > * { flex: 1; } .row > button { flex: 0 0 auto; }
+  /* ---------- tables + text ---------- */
+  table { width: 100%; border-collapse: collapse; }
+  th { color: var(--muted); font-weight: 600; font-size: 12px; text-align: left; padding: 8px 6px;
+       border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--card); }
+  td { padding: 8px 6px; border-bottom: 1px solid var(--line); color: var(--ink-2); }
+  tr:hover td { background: var(--card-2); }
+  td b { color: var(--ink); font-weight: 600; }
+  .pill { display: inline-flex; align-items: center; gap: 5px; font-size: 12px; font-weight: 600; }
+  .pill::before { content: ""; width: 8px; height: 8px; border-radius: 50%; background: var(--muted); }
+  .pill.up { color: var(--good); } .pill.up::before { background: var(--good); }
+  .pill.down { color: var(--error-text); } .pill.down::before { background: var(--critical); }
+  .pill.unknown { color: var(--muted); }
+  .tag { font-size: 11px; color: var(--muted); border: 1px solid var(--line); border-radius: 3px; padding: 1px 5px; }
+  pre { background: #0b0b0a; color: #d9d8d0; border: 1px solid var(--line); padding: 10px; border-radius: 4px;
+        overflow-x: auto; white-space: pre-wrap; direction: ltr; text-align: left; font-size: 13px; }
+  .error { color: var(--error-text); } .warn { color: var(--warning); } .ok { color: var(--good); }
   .small-text { font-size: 12px; color: var(--muted); margin: 6px 0; }
+  hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
+  #graph { height: 460px; border: 1px solid var(--line); border-radius: 4px;
+           background: radial-gradient(circle at 50% 40%, #1f2a22 0%, #121211 70%); }
   #msg:empty::before { content: "Results of discovery, graph questions and device history appear here."; color: var(--muted); font-size: 13px; }
-  #plan:empty::before { content: "Type what you want above, then click Make a plan. You can write in English or Arabic."; color: var(--muted); font-size: 13px; }
-  details > summary { cursor: pointer; color: var(--brand); }
+  #plan:empty::before { content: "Type what you want, then click Make a plan. English or Arabic both work."; color: var(--muted); font-size: 13px; }
 
   /* Arabic + English mixed text: each block picks its own direction from its first letters */
   [dir="auto"] { unicode-bidi: plaintext; }
 
-  .hist { border-left: 4px solid var(--ok); background: #fafafa; padding: 8px 12px; margin: 8px 0; border-radius: 4px; }
-  .hist.failed { border-color: var(--bad); } .hist.check { border-color: #607d8b; }
-  .hist .when { color: var(--muted); font-size: 13px; } .hist .tag { font-size: 12px; font-weight: bold; margin-left: 6px; }
-  .hist ul { margin: 4px 0; font-family: monospace; direction: ltr; } .hist pre { font-size: 12px; }
+  .hist { border-left: 3px solid var(--good); background: #111110; padding: 8px 12px; margin: 8px 0; border-radius: 4px; }
+  .hist.failed { border-color: var(--critical); } .hist.check { border-color: var(--s1); }
+  .hist .when { color: var(--muted); font-size: 12px; } .hist .tag { margin-left: 6px; }
+  .hist ul { margin: 4px 0; font-family: monospace; direction: ltr; }
 
-  @media (max-width: 1250px) { .grid { grid-template-columns: 1fr 1fr; } .col.right { grid-column: 1 / -1; } }
-  @media (max-width: 800px) { .topbar .sub, .topbar .updated { display: none; } }
-  @media (max-width: 800px) { .grid { grid-template-columns: 1fr; } .stats { grid-template-columns: repeat(2, 1fr); } }
+  @media (max-width: 1200px) { .tiles { grid-template-columns: repeat(3, 1fr); }
+                               .r-overview, .r-main, .r-bottom { grid-template-columns: 1fr 1fr; } }
+  @media (max-width: 760px)  { .tiles { grid-template-columns: repeat(2, 1fr); }
+                               .r-overview, .r-main, .r-bottom { grid-template-columns: 1fr; }
+                               .nav, .updated { display: none; } }
 </style>
 </head>
 <body>
+
 <div class="topbar">
-  <span class="logo">IBN</span>
-  <b>Intent-Based Networking</b>
-  <span class="sub">say what you want &rarr; check it &rarr; approve it</span>
+  <div class="brand"><span class="logo">IBN</span> Network Monitor</div>
+  <nav class="nav">
+    <a href="#overview">Overview</a><a href="#intent-card">Intent</a><a href="#topology">Topology</a>
+    <a href="#inventory">Devices</a><a href="#tools">Tools</a>
+  </nav>
   <span class="updated" id="updated"></span>
 </div>
 
-<!-- status tiles (filled by load()) -->
-<div class="stats">
-  <div class="stat"><div class="num" id="s-devices">0</div><div class="label">Devices</div></div>
-  <div class="stat up"><div class="num" id="s-up">0</div><div class="label">Up</div></div>
-  <div class="stat down"><div class="num" id="s-down">0</div><div class="label">Down</div></div>
-  <div class="stat"><div class="num" id="s-links">0</div><div class="label">Links</div></div>
-  <div class="stat"><div class="num" id="s-vendors">0</div><div class="label">Vendors</div></div>
-</div>
+<main class="page">
 
-<main class="grid">
+  <!-- tiles (filled by updateStats) -->
+  <section class="row tiles" id="overview">
+    <div class="card tile"><div class="icon" data-icon="router"></div><div><div class="label">Routers</div><div class="num" id="t-router">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="switch"></div><div><div class="label">Switches</div><div class="num" id="t-switch">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="firewall"></div><div><div class="label">Firewalls</div><div class="num" id="t-firewall">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="other"></div><div><div class="label">Other devices</div><div class="num" id="t-other">0</div></div></div>
+    <div class="card tile"><div class="icon" data-icon="link"></div><div><div class="label">Links</div><div class="num" id="t-links">0</div></div></div>
+    <div class="card tile down"><div class="icon" data-icon="alert"></div><div><div class="label">Down</div><div class="num" id="t-down">0</div></div></div>
+  </section>
 
-  <!-- LEFT: intent -> plan -> approve -->
-  <div class="col">
-    <section class="card">
-      <h2>&#128172; What do you want?</h2>
+  <!-- intent + health + vendors -->
+  <section class="row r-overview">
+    <div class="card" id="intent-card">
+      <h2>What do you want? <span class="hint">the AI writes the commands, you approve them</span></h2>
       <textarea id="intent" rows="4" dir="auto" placeholder="e.g. Create VLAN 10 named Sales on SW1"></textarea>
       <button class="big" onclick="sendIntent()">Make a plan</button>
-    </section>
-    <section class="card">
-      <h2>&#128221; Plan &amp; result</h2>
-      <div id="plan" class="scroll"></div>
-    </section>
-  </div>
+    </div>
+    <div class="card">
+      <h2>Network health</h2>
+      <div class="donut-wrap" id="health-chart"></div>
+    </div>
+    <div class="card">
+      <h2>Devices by vendor</h2>
+      <div class="donut-wrap" id="vendor-chart"></div>
+    </div>
+  </section>
 
-  <!-- MIDDLE: topology + results -->
-  <div class="col">
-    <section class="card">
-      <h2>&#127760; Network topology <span class="hint">drag boxes, scroll to zoom (remembered), click a line to select it</span></h2>
+  <!-- topology + plan -->
+  <section class="row r-main">
+    <div class="card" id="topology">
+      <h2>Network topology <span class="hint">drag boxes, scroll to zoom (remembered), click a line to select it</span></h2>
       <div id="graph"></div>
-      <button class="light" onclick="centerView()">Center view</button>
+      <button class="secondary" onclick="centerView()">Center view</button>
       <button id="remove-link" class="danger" style="display:none" onclick="removeLink()"></button>
-    </section>
-    <section class="card">
-      <h2>&#128203; Details &amp; results</h2>
-      <div id="msg" class="scroll" dir="auto"></div>
-    </section>
-  </div>
+    </div>
+    <div class="card" id="plan-card">
+      <h2>Plan &amp; result</h2>
+      <div id="plan" class="scroll"></div>
+    </div>
+  </section>
 
-  <!-- RIGHT: devices + tools -->
-  <div class="col right">
-    <section class="card">
-      <h2>&#128421; Devices</h2>
-      <div class="scroll"><table id="devices"></table></div>
-    </section>
-
-    <section class="card">
-      <h2>&#128269; Discovery</h2>
-      <div class="row">
-        <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
-        <button class="secondary" onclick="discover()">Scan (ping)</button>
+  <!-- inventory + tools -->
+  <section class="row r-bottom">
+    <div class="stack">
+      <div class="card" id="inventory">
+        <h2>Device inventory
+          <input id="search" placeholder="Search name, IP, vendor..." style="width:220px;margin:0 0 0 auto" oninput="renderTable()">
+        </h2>
+        <div class="scroll"><table id="devices"></table></div>
       </div>
-      <button class="secondary" onclick="findLinks()">Find links &amp; IPs (CDP)</button>
-      <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
-      <hr style="border:0;border-top:1px solid var(--line);margin:12px 0">
-      <p class="small-text">New lab? This deletes every device, link and history entry.</p>
-      <button class="danger" onclick="newTopology(this)">Start a new topology</button>
-    </section>
-
-    <section class="card">
-      <h2>&#128202; Ask the network graph</h2>
-      <div class="row">
-        <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
-        <button class="secondary" onclick="findPath()">Path</button>
+      <div class="card">
+        <h2>Details &amp; results</h2>
+        <div id="msg" class="scroll" dir="auto"></div>
       </div>
-      <div class="row">
-        <input id="g-dev" placeholder="Device (R2)">
-        <button class="secondary" onclick="whatIfDown()">What if it goes down?</button>
+    </div>
+
+    <div class="stack" id="tools">
+      <div class="card">
+        <h2>Discovery</h2>
+        <div class="inline">
+          <input id="subnet" placeholder="Subnet to scan, e.g. 192.168.1.0/24">
+          <button class="secondary" onclick="discover()">Scan (ping)</button>
+        </div>
+        <button class="secondary" onclick="findLinks()">Find links &amp; IPs (CDP)</button>
+        <button class="secondary" onclick="post('/api/refresh').then(load)">Refresh up/down</button>
+        <hr>
+        <p class="small-text">New lab? This deletes every device, link and history entry.</p>
+        <button class="danger" onclick="newTopology(this)">Start a new topology</button>
       </div>
-      <button class="secondary" onclick="criticalDevices()">Critical devices</button>
-    </section>
 
-    <section class="card">
-      <details>
-        <summary><b>&#10133; Add / edit a device</b></summary>
-        <p class="small-text">Same name = update. Use vendor <b>simulated</b> to test without real devices.</p>
-        <div class="row">
-          <input id="d-name" placeholder="Name (R1)">
-          <input id="d-ip" placeholder="IP (192.168.1.1)">
+      <div class="card">
+        <h2>Ask the network graph</h2>
+        <div class="inline">
+          <input id="g-a" placeholder="From (SW1)"><input id="g-b" placeholder="To (SW3)">
+          <button class="secondary" onclick="findPath()">Path</button>
         </div>
-        <div class="row">
-          <select id="d-vendor">
-            {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
-            {% endfor %}
-          </select>
-          <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
+        <div class="inline">
+          <input id="g-dev" placeholder="Device (R2)">
+          <button class="secondary" onclick="whatIfDown()">What if it goes down?</button>
         </div>
-        <div class="row">
-          <input id="d-username" placeholder="Login username (optional, else from .env)">
-          <input id="d-password" type="password" placeholder="Login password (optional)">
-        </div>
-        <button onclick="addDevice()">Save device</button>
-      </details>
-    </section>
+        <button class="secondary" onclick="criticalDevices()">Critical devices</button>
+      </div>
 
-    <section class="card">
-      <details>
-        <summary><b>&#128279; Link two devices</b></summary>
-        <div class="row">
-          <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
-          <button class="secondary" onclick="addLink()">Link</button>
-        </div>
-      </details>
-    </section>
-  </div>
+      <div class="card">
+        <details>
+          <summary>Add / edit a device</summary>
+          <p class="small-text">Same name = update. Use vendor <b>simulated</b> to test without real devices.
+             Login empty = use the one in <b>.env</b>.</p>
+          <div class="inline">
+            <input id="d-name" placeholder="Name (R1)">
+            <input id="d-ip" placeholder="IP (192.168.1.1)">
+          </div>
+          <div class="inline">
+            <select id="d-vendor">
+              {% for v in vendors %}<option value="{{ v.name }}">{{ v.name }} ({{ v.description }})</option>
+              {% endfor %}
+            </select>
+            <select id="d-protocol"><option>ssh</option><option>telnet</option></select>
+          </div>
+          <div class="inline">
+            <input id="d-username" placeholder="Login username (optional)">
+            <input id="d-password" type="password" placeholder="Login password (optional)">
+          </div>
+          <button onclick="addDevice()">Save device</button>
+        </details>
+      </div>
+
+      <div class="card">
+        <details>
+          <summary>Link two devices</summary>
+          <div class="inline">
+            <input id="l-a" placeholder="Device A"><input id="l-b" placeholder="Device B">
+            <button class="secondary" onclick="addLink()">Link</button>
+          </div>
+        </details>
+      </div>
+    </div>
+  </section>
 
 </main>
 
@@ -260,18 +322,8 @@ function centerView() { network.fit(); setTimeout(saveView, 600); }
 async function load() {
   const t = await get("/api/topology");
 
-  let rows = "<tr><th>Name</th><th>IP</th><th>State</th><th></th></tr>";
-  for (const d of t.devices) {
-    const state = d.state === "up" || d.state === "down" ? d.state : "unknown";
-    rows += `<tr><td><b>${esc(d.name)}</b><br><span class="small-text">${esc(d.vendor)}</span></td><td>${esc(d.ip)}</td>
-      <td><span class="pill ${state}">${esc(d.state || "?")}</span></td>
-      <td style="white-space:nowrap"><button class="small light" onclick="history_('${esc(d.name)}')">History</button>
-          <button class="small light" onclick="edit('${esc(d.name)}')">Edit</button>
-          <button class="small danger" onclick="del('${esc(d.name)}', this)">X</button></td></tr>`;
-  }
-  if (!t.devices.length) rows += `<tr><td colspan="4" class="small-text">No devices yet: scan a subnet or add one below.</td></tr>`;
-  document.getElementById("devices").innerHTML = rows;
   window.devices = t.devices;
+  renderTable();
   updateStats(t);
   if (!window.vis) return;
 
@@ -286,8 +338,13 @@ async function load() {
     edgesData = new vis.DataSet(edges);
     const view = savedView();
     // fit:false = don't jump back to the default view when the picture is drawn
-    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData},
-                              view ? {physics: {stabilization: {fit: false}}} : {});
+    const options = {
+      nodes: {shape: "box", margin: 10, font: {color: "#f0efec", face: "system-ui", size: 13},
+              borderWidth: 2, shapeProperties: {borderRadius: 4}},
+      edges: {color: {color: "#5f6b62", highlight: "#0ca30c"}, width: 2, smooth: false},
+      ...(view ? {physics: {stabilization: {fit: false}}} : {}),
+    };
+    network = new vis.Network(document.getElementById("graph"), {nodes: nodesData, edges: edgesData}, options);
     if (view) network.moveTo({...view, animation: false});
     network.on("dragEnd", () => { savePositions(); saveView(); });  // moving a box or the whole picture
     network.on("zoom", saveView);
@@ -304,16 +361,87 @@ async function load() {
   edgesData.update(edges);
 }
 
-// The status tiles at the top of the page.
-function updateStats(t) {
-  const count = state => t.devices.filter(d => d.state === state).length;
-  document.getElementById("s-devices").textContent = t.devices.length;
-  document.getElementById("s-up").textContent = count("up");
-  document.getElementById("s-down").textContent = count("down");
-  document.getElementById("s-links").textContent = t.links.length;
-  document.getElementById("s-vendors").textContent = new Set(t.devices.map(d => d.vendor)).size;
-  document.getElementById("updated").textContent = "Updated " + new Date().toLocaleTimeString();
+// ---------- dashboard: tiles, charts, inventory table ----------
+// Device type is guessed from the vendor and the name (only for the tiles and the table).
+function deviceType(d) {
+  const name = (d.name || "").toLowerCase();
+  // a "word" in the name: start of the name or after - _ space (so "HW-SW2" counts as a switch)
+  const has = re => new RegExp("(^|[-_ ])(" + re + ")").test(name);
+  if (d.vendor === "fortigate" || has("fw|firewall")) return "firewall";
+  if (has("sw|switch") || ["cisco_nxos", "arista_eos"].includes(d.vendor)) return "switch";
+  if (has("r\\d|rtr|router") || d.vendor === "mikrotik_routeros") return "router";
+  return "other";
 }
+
+function updateStats(t) {
+  const count = f => t.devices.filter(f).length;
+  for (const type of ["router", "switch", "firewall", "other"])
+    document.getElementById("t-" + type).textContent = count(d => deviceType(d) === type);
+  document.getElementById("t-links").textContent = t.links.length;
+  document.getElementById("t-down").textContent = count(d => d.state === "down");
+  document.getElementById("updated").textContent = "Updated " + new Date().toLocaleTimeString();
+
+  const up = count(d => d.state === "up"), down = count(d => d.state === "down");
+  donut("health-chart", t.devices.length, [
+    {label: "Up", value: up, color: "var(--good)"},
+    {label: "Down", value: down, color: "var(--critical)"},
+    {label: "Not checked", value: t.devices.length - up - down, color: "var(--muted)"},
+  ]);
+  // Vendors are sorted by name, so each vendor always keeps the same color.
+  const vendors = [...new Set(t.devices.map(d => d.vendor))].sort();
+  donut("vendor-chart", t.devices.length, vendors.map((v, i) => ({
+    label: v, value: count(d => d.vendor === v), color: `var(--s${(i % 8) + 1})`})));
+}
+
+// A ring chart drawn with SVG: one arc per item, a small gap between arcs, the total in the middle.
+function donut(id, total, items) {
+  const r = 50, c = 2 * Math.PI * r, gap = total > 1 ? 2 : 0;
+  let offset = 0, arcs = "";
+  for (const it of items.filter(i => i.value > 0)) {
+    const len = c * it.value / total;
+    arcs += `<circle class="seg" cx="60" cy="60" r="${r}" fill="none" stroke="${it.color}" stroke-width="14"
+               stroke-dasharray="${Math.max(len - gap, 0.5)} ${c}" stroke-dashoffset="${-offset}">
+               <title>${esc(it.label)}: ${it.value} (${Math.round(100 * it.value / total)}%)</title></circle>`;
+    offset += len;
+  }
+  if (!total) arcs = `<circle cx="60" cy="60" r="${r}" fill="none" stroke="#2c2c2a" stroke-width="14"/>`;
+  const legend = items.map(it => `<li><span class="sw" style="background:${it.color}"></span>${esc(it.label)}
+      <span class="val">${it.value}</span><span class="pct">${total ? Math.round(100 * it.value / total) : 0}%</span></li>`).join("");
+  document.getElementById(id).innerHTML =
+    `<div class="donut"><svg viewBox="0 0 120 120">${arcs}</svg><div class="center">${total}</div></div>
+     <ul class="legend">${legend || '<li class="small-text">No devices yet</li>'}</ul>`;
+}
+
+function renderTable() {
+  const q = (document.getElementById("search").value || "").toLowerCase();
+  const list = (window.devices || []).filter(d =>
+    [d.name, d.ip, d.vendor, deviceType(d)].join(" ").toLowerCase().includes(q));
+  let rows = "<tr><th>Device</th><th>Type</th><th>Vendor</th><th>IP address</th><th>State</th><th></th></tr>";
+  for (const d of list) {
+    const state = d.state === "up" || d.state === "down" ? d.state : "unknown";
+    rows += `<tr><td><b>${esc(d.name)}</b></td><td><span class="tag">${deviceType(d)}</span></td>
+      <td>${esc(d.vendor)}</td><td>${esc(d.ip)}</td>
+      <td><span class="pill ${state}">${esc(d.state || "not checked")}</span></td>
+      <td style="white-space:nowrap;text-align:right">
+          <button class="small secondary" onclick="history_('${esc(d.name)}')">History</button>
+          <button class="small secondary" onclick="edit('${esc(d.name)}')">Edit</button>
+          <button class="small danger" onclick="del('${esc(d.name)}', this)">X</button></td></tr>`;
+  }
+  if (!list.length) rows += `<tr><td colspan="6" class="small-text">${q ? "No device matches the search."
+                                 : "No devices yet: scan a subnet or add one in Tools."}</td></tr>`;
+  document.getElementById("devices").innerHTML = rows;
+}
+
+// Small line icons for the tiles.
+const ICONS = {
+  router: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M8 12h8M12 8v8"/></svg>',
+  switch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h.01M11 12h.01M15 12h.01"/></svg>',
+  firewall: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l8 3v6c0 5-3.5 8-8 9-4.5-1-8-4-8-9V6z"/></svg>',
+  other: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/><path d="M4 10h16"/></svg>',
+  link: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M10 14a4 4 0 0 0 6 0l3-3a4 4 0 0 0-6-6l-1 1M14 10a4 4 0 0 0-6 0l-3 3a4 4 0 0 0 6 6l1-1"/></svg>',
+  alert: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l9 16H3z"/><path d="M12 10v4M12 17h.01"/></svg>',
+};
+document.querySelectorAll("[data-icon]").forEach(el => el.innerHTML = ICONS[el.dataset.icon]);
 
 function showLinkButton() {
   const b = document.getElementById("remove-link");
@@ -326,14 +454,20 @@ async function removeLink() {
                              body: JSON.stringify({a: selectedLink.from, b: selectedLink.to})});
   selectedLink = null; showLinkButton(); load();
 }
-const nodeColor = d => d.state === "down" ? "#f5b7b1" : "#a9dfbf";
+// Box colors: dark fill + colored border (green up, red down, gray unknown).
+const nodeColor = d => {
+  const border = d.state === "down" ? "#d03b3b" : d.state === "up" ? "#0ca30c" : "#898781";
+  const bg = d.state === "down" ? "#3a1616" : d.state === "up" ? "#13301a" : "#2a2a28";
+  return {background: bg, border, highlight: {background: bg, border: "#f0efec"}};
+};
 
 // ---------- graph questions (answered by NetworkX on the server) ----------
 function highlight(groups) {  // groups = [[names], [names]...], each group gets a color
-  const colors = ["#f9e79f", "#aed6f1", "#d7bde2", "#f5cba7"];
+  const colors = ["#3987e5", "#d95926", "#199e70", "#c98500"];  // chart colors 1-4
   if (!nodesData) return;
   nodesData.update(window.devices.map(d => ({id: d.name, color: nodeColor(d)})));  // reset
-  groups.forEach((g, i) => nodesData.update(g.map(n => ({id: n, color: colors[i % colors.length]}))));
+  groups.forEach((g, i) => nodesData.update(g.map(n => ({id: n,
+    color: {background: colors[i % colors.length], border: "#f0efec"}}))));
 }
 const say = html => document.getElementById("msg").innerHTML = "<p>" + html + "</p>";
 
@@ -373,7 +507,8 @@ async function criticalDevices() {
 
 function edit(name) {
   const d = window.devices.find(x => x.name === name);
-  document.getElementById("d-name").closest("details").open = true;
+  const form = document.getElementById("d-name").closest("details");
+  form.open = true; form.scrollIntoView({behavior: "smooth", block: "center"});
   for (const k of ["name", "ip", "vendor", "protocol", "username"]) document.getElementById("d-" + k).value = d[k] || "";
   document.getElementById("d-password").value = "";  // never shown; leave empty to keep the saved one
 }

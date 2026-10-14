@@ -7,6 +7,14 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Dark "network monitor" dashboard
+- 🟡 `ibn/interface/templates/index.html`: new dark design. Top navigation bar; tiles for
+  routers / switches / firewalls / other devices / links / down; **Network health** and
+  **Devices by vendor** ring charts; larger topology; **Device inventory** table with a search box.
+  The device type is guessed from the vendor and name (only for display).
+- Only real data is shown (no traffic graphs: the project doesn't collect traffic yet).
+- No other file changed: every button calls the same API URLs as before.
+
 ### Old topology data no longer sticks around
 - 🟢 **Start a new topology** button (Discovery card): deletes every device, link and history
   entry, safely, while the program runs. New URL `POST /api/reset`.
