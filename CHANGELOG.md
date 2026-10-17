@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Lab configs match the new topology
+- 🟡 `lab/VPN_lab_config_with_management.txt` (notes, not code): management through R2 e0/3
+  (192.168.43.2, host-only cloud); devices are managed on their loopbacks (R1/R2/R3 = 10.0.0.1/2/3)
+  and the switches on Vlan1 (SW1 10.0.1.11, SW3 10.0.3.13); R2 sends a default route into OSPF.
+
 ### New look for the web page (charcoal + green monitoring theme)
 - 🟡 `index.html` only: new colors, a left icon bar (Intent, Topology, Devices, Tools, Results),
   a header with a green/red status arrow and vendor chips, the device search moved to the top bar,
