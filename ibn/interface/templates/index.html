@@ -62,13 +62,17 @@
   .chip { background: #2a2d33; border-radius: 4px; padding: 2px 8px; display: inline-flex; align-items: center; gap: 6px; }
   .chip i { width: 9px; height: 9px; border-radius: 2px; display: inline-block; }
 
-  /* KPI cards: a gauge or one big number, label underneath */
-  .tiles { display: grid; grid-template-columns: repeat(7, 1fr); gap: 12px; flex: 0 0 auto; }
-  .kpi { text-align: center; padding: 10px 8px 12px; display: flex; flex-direction: column;
-         justify-content: center; align-items: center; min-height: 112px; }
-  .kpi .num { font-size: 34px; font-weight: 600; line-height: 1; margin: 16px 0 14px; font-variant-numeric: tabular-nums; }
-  .kpi .label { font-size: 15px; font-weight: 600; color: var(--ink-2); }
-  .kpi.down.alert .num { color: var(--critical); }
+  .chip b { color: var(--ink); font-weight: 600; font-variant-numeric: tabular-nums; }
+  .chip.alert { background: #3d1d19; color: var(--error-text); } .chip.alert b { color: var(--error-text); }
+  [hidden] { display: none !important; }
+
+  /* the charts panel: opens over the page with the "Charts" button, so it takes no space */
+  .page { position: relative; }
+  .stats-panel { position: absolute; top: 62px; right: 14px; z-index: 20; width: min(820px, calc(100% - 28px));
+                 display: grid; grid-template-columns: auto 1fr 1fr; gap: 18px; align-items: center;
+                 box-shadow: 0 12px 32px rgba(0,0,0,.55); }
+  .stats-panel h2 { margin-bottom: 8px; }
+  .avail { text-align: center; }
   .gauge { position: relative; width: 92px; height: 78px; margin-bottom: 4px; }
   .gauge svg { width: 92px; height: 77px; display: block; }
   .gauge .val { position: absolute; left: 0; right: 0; top: 27px; font-size: 20px; font-weight: 600; }
@@ -84,7 +88,6 @@
              display: flex; align-items: center; gap: 8px; flex: 0 0 auto; }
   .card h2 .hint { font-weight: normal; color: var(--ink-2); font-size: 13px; }
   .card h2 .hint::before { content: "- "; }
-  .charts { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; flex: 0 0 auto; }
 
   /* tabs on the right side (green underline) */
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin: -4px 0 10px; flex: 0 0 auto; }
@@ -181,11 +184,11 @@
   @media (max-width: 1300px) { .rail { display: none; } }
   @media (max-width: 1100px) {
     body { overflow: auto; height: auto; } .shell, .page { flex: none; }
-    .main { grid-template-columns: 1fr; } .tiles { grid-template-columns: repeat(4, 1fr); }
+    .main { grid-template-columns: 1fr; } .stats-panel { grid-template-columns: 1fr; }
     .card.grow { min-height: 380px; } #graph { height: 380px; }
     .searchbox { display: none; }
   }
-  @media (max-width: 600px) { .tiles { grid-template-columns: repeat(2, 1fr); } .charts { grid-template-columns: 1fr; } }
+
 </style>
 </head>
 <body>
@@ -207,6 +210,7 @@
   <button data-tab="devices" class="active" onclick="showTab('devices')"><span data-icon="switch"></span>Devices</button>
   <button data-tab="tools" onclick="showTab('tools')"><span data-icon="tools"></span>Tools</button>
   <button data-tab="results" onclick="showTab('results')"><span data-icon="results"></span>Results</button>
+  <button onclick="toggleCharts()"><span data-icon="chart"></span>Charts</button>
 </nav>
 
 <main class="page">
@@ -215,20 +219,27 @@
     <span class="status" id="status" title="Green = no device is down"><span data-icon="arrow"></span></span>
     <div>
       <h1>Network Overview</h1>
-      <div class="chips" id="chips"></div>
+      <!-- small counters (filled by updateStats): one line, no extra space -->
+      <div class="chips">
+        <span class="chip" title="Devices up, out of the devices that were checked">Availability <b id="t-avail">&ndash;</b></span>
+        <span class="chip"><b id="t-router">0</b> routers</span>
+        <span class="chip"><b id="t-switch">0</b> switches</span>
+        <span class="chip"><b id="t-firewall">0</b> firewalls</span>
+        <span class="chip"><b id="t-other">0</b> other</span>
+        <span class="chip"><b id="t-links">0</b> links</span>
+        <span class="chip" id="k-down"><b id="t-down">0</b> down</span>
+        <span class="chips" id="chips"></span>
+      </div>
     </div>
+    <button id="charts-btn" class="small secondary" style="margin-left:auto" onclick="toggleCharts()">Charts &#9662;</button>
   </div>
 
-  <!-- KPI cards (filled by updateStats) -->
-  <section class="tiles">
-    <div class="card kpi" title="Devices up, out of the devices that were checked"><div class="gauge" id="g-avail"></div><div class="label">Availability</div></div>
-    <div class="card kpi"><div class="num" id="t-router">0</div><div class="label">Routers</div></div>
-    <div class="card kpi"><div class="num" id="t-switch">0</div><div class="label">Switches</div></div>
-    <div class="card kpi"><div class="num" id="t-firewall">0</div><div class="label">Firewalls</div></div>
-    <div class="card kpi"><div class="num" id="t-other">0</div><div class="label">Other devices</div></div>
-    <div class="card kpi"><div class="num" id="t-links">0</div><div class="label">Links</div></div>
-    <div class="card kpi down" id="k-down"><div class="num" id="t-down">0</div><div class="label">Down</div></div>
-  </section>
+  <!-- the charts: hidden until "Charts" is clicked -->
+  <div class="card stats-panel" id="stats-panel" hidden>
+    <div class="avail"><h2>Availability</h2><div class="gauge" id="g-avail"></div></div>
+    <div><h2>Network health</h2><div class="donut-wrap" id="health-chart"></div></div>
+    <div><h2>Devices by vendor</h2><div class="donut-wrap" id="vendor-chart"></div></div>
+  </div>
 
   <section class="main">
 
@@ -245,7 +256,7 @@
       </div>
     </div>
 
-    <!-- MIDDLE: topology + charts -->
+    <!-- MIDDLE: topology -->
     <div class="col">
       <div class="card grow">
         <h2>Network topology <span class="hint" title="Drag boxes, scroll to zoom (remembered), click a line to select it">drag &middot; zoom &middot; click a line</span>
@@ -253,10 +264,6 @@
           <button id="remove-link" class="small danger" style="display:none" onclick="removeLink()"></button>
         </h2>
         <div id="graph"></div>
-      </div>
-      <div class="charts">
-        <div class="card"><h2>Network health</h2><div class="donut-wrap" id="health-chart"></div></div>
-        <div class="card"><h2>Devices by vendor</h2><div class="donut-wrap" id="vendor-chart"></div></div>
       </div>
     </div>
 
@@ -452,8 +459,8 @@ async function load() {
   edgesData.update(edges);
 }
 
-// ---------- dashboard: tiles, charts, inventory table ----------
-// Device type is guessed from the vendor and the name (only for the tiles and the table).
+// ---------- dashboard: counters, charts, inventory table ----------
+// Device type is guessed from the vendor and the name (only for the counters and the table).
 function deviceType(d) {
   const name = (d.name || "").toLowerCase();
   // a "word" in the name: start of the name or after - _ space (so "HW-SW2" counts as a switch)
@@ -474,13 +481,17 @@ function updateStats(t) {
 
   const up = count(d => d.state === "up"), down = count(d => d.state === "down");
   // Availability = devices up, out of the devices we checked (up or down).
-  gauge("g-avail", up + down ? Math.round(100 * up / (up + down)) : null);
+  const avail = up + down ? Math.round(100 * up / (up + down)) : null;
+  gauge("g-avail", avail);
+  const availText = document.getElementById("t-avail");
+  availText.textContent = avail === null ? "\u2013" : avail + "%";
+  availText.style.color = avail === null ? "" : avail >= 80 ? "var(--good)" : avail >= 50 ? "var(--warning)" : "var(--critical)";
   document.getElementById("k-down").classList.toggle("alert", down > 0);
   document.getElementById("status").classList.toggle("bad", down > 0);
   // Header chips: how many devices and links, then one chip per vendor.
   const vendorList = [...new Set(t.devices.map(d => d.vendor))].sort();
   document.getElementById("chips").innerHTML =
-    `<span class="chip">${t.devices.length} devices</span><span class="chip">${t.links.length} links</span>` +
+    `<span class="chip"><b>${t.devices.length}</b> devices</span>` +
     vendorList.map((v, i) => `<span class="chip"><i style="background:var(--s${(i % 8) + 1})"></i>${esc(v)}</span>`).join("");
   donut("health-chart", t.devices.length, [
     {label: "Up", value: up, color: "var(--good)"},
@@ -492,6 +503,16 @@ function updateStats(t) {
   donut("vendor-chart", t.devices.length, vendors.map((v, i) => ({
     label: v, value: count(d => d.vendor === v), color: `var(--s${(i % 8) + 1})`})));
 }
+
+// The charts panel opens over the page and closes with a click outside it or Esc.
+function toggleCharts(open) {
+  const panel = document.getElementById("stats-panel");
+  panel.hidden = open === undefined ? !panel.hidden : !open;
+}
+document.addEventListener("click", e => {
+  if (!e.target.closest("#stats-panel, #charts-btn, .rail")) toggleCharts(false);
+});
+document.addEventListener("keydown", e => { if (e.key === "Escape") toggleCharts(false); });
 
 // A half-open ring (like a speedometer): green when high, yellow in the middle, red when low.
 function gauge(id, pct) {
@@ -555,6 +576,7 @@ new MutationObserver(() => showTab("results")).observe(document.getElementById("
 // Small line icons (left rail, search box, status arrow).
 const ICONS = {
   switch: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="7" width="18" height="10" rx="2"/><path d="M7 12h.01M11 12h.01M15 12h.01"/></svg>',
+  chart: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="8"/><path d="M12 4v8l6 4"/></svg>',
   search: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M20 20l-4-4"/></svg>',
   intent: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 5h16v11H9l-5 4z"/><path d="M8 9h8M8 12h5"/></svg>',
   topology: '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="9" y="3" width="6" height="5" rx="1"/><rect x="3" y="16" width="6" height="5" rx="1"/><rect x="15" y="16" width="6" height="5" rx="1"/><path d="M12 8v4M6 16v-4h12v4"/></svg>',
