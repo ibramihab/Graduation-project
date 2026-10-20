@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### More room for the important parts of the page
+- 🟡 `index.html` only: the big number cards are now small counters on one line under "Network Overview"
+  (Down turns red). Availability, Network health and Devices by vendor moved into a panel that opens with
+  the "Charts" button (top right or left bar) and closes with a click outside or Esc. The topology gets the space.
+
 ### Lab configs match the new topology
 - 🟡 `lab/VPN_lab_config_with_management.txt` (notes, not code): management through R2 e0/3
   (192.168.43.2, host-only cloud); devices are managed on their loopbacks (R1/R2/R3 = 10.0.0.1/2/3)
