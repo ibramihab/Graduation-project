@@ -7,6 +7,9 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Version badge
+- 🟢 `index.html`: a small "v1.1" badge next to the logo (shows which version you are running).
+
 ### More room for the important parts of the page
 - 🟡 `index.html` only: the big number cards are now small counters on one line under "Network Overview"
   (Down turns red). Availability, Network health and Devices by vendor moved into a panel that opens with

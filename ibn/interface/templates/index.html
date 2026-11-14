@@ -32,6 +32,8 @@
             display: flex; align-items: center; gap: 20px; padding: 0 18px; height: 54px; }
   .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; white-space: nowrap; }
   .brand .a { color: var(--good); } .brand .b { color: var(--ink); font-weight: 600; }
+  .version { font-size: 11px; font-weight: 600; color: var(--good); border: 1px solid var(--good);
+             border-radius: 10px; padding: 1px 7px; margin-left: 8px; vertical-align: 3px; }
   .searchbox { flex: 0 1 440px; position: relative; }
   .searchbox svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; color: var(--muted); }
   .searchbox input { margin: 0; padding-left: 36px; background: #24262b; border-color: transparent; border-radius: 6px; }
@@ -194,7 +196,7 @@
 <body>
 
 <div class="topbar">
-  <div class="brand"><span class="a">IBN</span><span class="b"> Monitor</span></div>
+  <div class="brand"><span class="a">IBN</span><span class="b"> Monitor</span><span class="version" title="Project version">v1.1</span></div>
   <label class="searchbox"><span data-icon="search"></span>
     <input id="search" placeholder="Search devices: name, IP, vendor, type..." oninput="renderTable(); showTab('devices')">
   </label>
