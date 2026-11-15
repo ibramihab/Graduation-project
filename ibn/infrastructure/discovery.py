@@ -81,8 +81,12 @@ def discover(kb, cidr: str) -> list[dict]:
 
 
 def refresh_states(kb) -> None:
-    """Ping every known device and save up/down in the knowledge base."""
-    devices = [d for d in kb.list_devices() if d.get("ip")]
+    """Ping every known device and save up/down in the knowledge base.
+    Simulated devices live inside the program (there is nothing to ping): always "up"."""
+    for device in kb.list_devices():
+        if device.get("vendor") == "simulated":
+            kb.update_device(device["name"], state="up")
+    devices = [d for d in kb.list_devices() if d.get("ip") and d.get("vendor") != "simulated"]
     with ThreadPoolExecutor(max_workers=64) as pool:
         results = pool.map(lambda d: ping(d["ip"]), devices)
     for device, up in zip(devices, results):

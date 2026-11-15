@@ -3,7 +3,7 @@
 The AI can make mistakes, so we never trust it blindly. Checks:
   1. the device exists in the knowledge base
   2. we have a driver for its vendor
-  3. the device is reachable (not "down")
+  3. the device is reachable (not "down"); with DRY_RUN only a warning (nothing is sent)
   4. there are commands and a rollback
   5. no dangerous commands (the vendor's "blocked" list in ibn/vendors/)
   6. "check" steps only contain read-only commands (ping, show, display...), and
@@ -21,6 +21,7 @@ check for IP conflicts using the knowledge base, ask a second LLM to review.
 """
 import re
 
+from .. import settings
 from ..infrastructure.drivers import DRIVERS
 from ..knowledge.graph_analysis import impact
 from ..vendors import get_vendor
@@ -53,7 +54,10 @@ def validate(plan: dict, kb) -> dict:
             errors.append(f"{name}: no driver for vendor '{vendor}'")
             continue
         if device.get("state") == "down":
-            errors.append(f"{name}: device is down (not answering ping)")
+            if settings.DRY_RUN:  # nothing will be sent, so the plan can still be tested
+                warnings.append(f"{name}: device is down (not answering ping); OK in dry run, nothing is sent")
+            else:
+                errors.append(f"{name}: device is down (not answering ping)")
         if not change.get("commands"):
             errors.append(f"{name}: no commands")
 

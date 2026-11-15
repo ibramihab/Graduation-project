@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Testing without a lab is easier
+- 🟡 `discovery.py`: "Refresh up/down" marks simulated devices "up" (they live in the program, nothing to ping).
+- 🟡 `validator.py`: with `DRY_RUN=true` a device that is "down" is only a warning, so plans can still be tested.
+- 🟡 `web.py` + `index.html`: an empty Interfaces box now KEEPS the saved interfaces (like the password box).
+
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices
   Find links can't read (simulated or hand-drawn labs). The AI needs them to plan routing. Short names become

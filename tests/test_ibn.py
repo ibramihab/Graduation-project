@@ -452,7 +452,28 @@ def test_interfaces_can_be_typed_for_a_device(kb):
                                       "interfaces": "e0/0 192.168.1.1/24\n\n  Ethernet0/1   10.0.12.1/24 \nlo0 9.9.9.9"})
     assert kb.get_device("R9")["interfaces"] == ["Ethernet0/0 192.168.1.1/24", "Ethernet0/1 10.0.12.1/24",
                                                  "Loopback0 9.9.9.9"]
+    saved = kb.get_device("R9")["interfaces"]
     client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated", "interfaces": ""})
-    assert "interfaces" not in kb.get_device("R9")  # box emptied in Edit = no interfaces
-    client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated"})  # no box: nothing changes
-    assert "interfaces" not in kb.get_device("R9")
+    assert kb.get_device("R9")["interfaces"] == saved  # box left empty = keep them (like the password)
+    client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated", "interfaces": "e0/3 10.3.3.1/24"})
+    assert kb.get_device("R9")["interfaces"] == ["Ethernet0/3 10.3.3.1/24"]  # typed = replace them
+
+
+def test_simulated_devices_are_always_up(kb, monkeypatch):
+    """They live inside the program: pinging their IP means nothing."""
+    from ibn.infrastructure import discovery
+    monkeypatch.setattr(discovery, "ping", lambda ip: False)  # nothing answers
+    kb.add_device({"name": "PC1", "ip": "10.0.0.50", "vendor": "cisco_ios"})
+    discovery.refresh_states(kb)
+    assert kb.get_device("R1")["state"] == "up" and kb.get_device("SW1")["state"] == "up"  # simulated
+    assert kb.get_device("PC1")["state"] == "down"                                         # a real one
+
+
+def test_a_down_device_is_only_a_warning_in_dry_run(kb, monkeypatch):
+    from ibn import settings
+    kb.update_device("R1", state="down")
+    plan = {"changes": [change("R1", ["vlan 10"], ["no vlan 10"])]}
+    assert not validate(plan, kb)["ok"]
+    monkeypatch.setattr(settings, "DRY_RUN", True)
+    result = validate(plan, kb)
+    assert result["ok"] and "nothing is sent" in result["warnings"][0]
