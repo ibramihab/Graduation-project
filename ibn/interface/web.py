@@ -2,6 +2,8 @@
 
 Every button on the page calls one of these URLs (a simple JSON API).
 """
+import re
+
 from flask import Flask, jsonify, render_template, request
 
 from .. import pipeline
@@ -9,6 +11,28 @@ from ..infrastructure import discovery
 from ..intent import get_llm
 from ..knowledge import get_knowledge_base, graph_analysis
 from ..vendors import VENDORS
+
+
+# Short port names people type -> the full names the devices (and the validation) use.
+SHORT_NAMES = {"e": "Ethernet", "eth": "Ethernet", "fa": "FastEthernet", "g": "GigabitEthernet",
+               "gi": "GigabitEthernet", "te": "TenGigabitEthernet", "s": "Serial", "se": "Serial",
+               "lo": "Loopback", "tu": "Tunnel", "vl": "Vlan", "po": "Port-channel"}
+
+
+def interface_list(text) -> list[str]:
+    """ "e0/0 192.168.1.1/24\nEthernet0/1 10.0.12.1" -> ["Ethernet0/0 192.168.1.1/24", "Ethernet0/1 10.0.12.1"]
+    (the same format "Find links" saves: port name, then its IP)."""
+    lines = text.splitlines() if isinstance(text, str) else list(text or [])
+    result = []
+    for line in lines:
+        parts = line.replace(",", " ").split()
+        if not parts:
+            continue
+        match = re.match(r"([A-Za-z-]+)\s*([\d/.:]+)$", parts[0])
+        if match and match[1].lower() in SHORT_NAMES:
+            parts[0] = SHORT_NAMES[match[1].lower()] + match[2]
+        result.append(" ".join(parts))
+    return result
 
 
 def create_app(kb=None, llm=None) -> Flask:
@@ -52,6 +76,10 @@ def create_app(kb=None, llm=None) -> Flask:
         #   password typed                -> save this new password
         #   password empty                -> keep the saved password (the page never shows it)...
         #   ...unless username is empty too -> forget both: use the full .env login
+        # Interfaces typed by hand (one per line), for devices "Find links" can't read (e.g. simulated).
+        # Box empty = no interfaces typed (the Edit button fills the box with the saved ones).
+        if "interfaces" in request.json:
+            device["interfaces"] = interface_list(request.json["interfaces"]) or None
         username_empty = "username" in request.json and not request.json["username"]
         password_empty = not request.json.get("password")
         if username_empty:

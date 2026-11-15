@@ -32,6 +32,8 @@
             display: flex; align-items: center; gap: 20px; padding: 0 18px; height: 54px; }
   .brand { font-size: 22px; font-weight: 800; letter-spacing: -0.5px; white-space: nowrap; }
   .brand .a { color: var(--good); } .brand .b { color: var(--ink); font-weight: 600; }
+  .version { font-size: 11px; font-weight: 600; color: var(--good); border: 1px solid var(--good);
+             border-radius: 10px; padding: 1px 7px; margin-left: 8px; vertical-align: 3px; }
   .searchbox { flex: 0 1 440px; position: relative; }
   .searchbox svg { position: absolute; left: 12px; top: 50%; transform: translateY(-50%); width: 16px; color: var(--muted); }
   .searchbox input { margin: 0; padding-left: 36px; background: #24262b; border-color: transparent; border-radius: 6px; }
@@ -194,7 +196,7 @@
 <body>
 
 <div class="topbar">
-  <div class="brand"><span class="a">IBN</span><span class="b"> Monitor</span></div>
+  <div class="brand"><span class="a">IBN</span><span class="b"> Monitor</span><span class="version" title="Project version">v1.1</span></div>
   <label class="searchbox"><span data-icon="search"></span>
     <input id="search" placeholder="Search devices: name, IP, vendor, type..." oninput="renderTable(); showTab('devices')">
   </label>
@@ -302,7 +304,8 @@
 
             <h3>Add / edit a device</h3>
             <p class="small-text">Same name = update. Username empty = use the one in <b>.env</b>.
-               Password: type a new one to change it, leave empty to keep it.</p>
+               Password: type a new one to change it, leave empty to keep it.
+               Interfaces: needed by the AI for routing; add the mask (/24) if you can.</p>
             <div class="inline">
               <input id="d-name" placeholder="Name (R1)">
               <input id="d-ip" placeholder="IP (192.168.1.1)">
@@ -319,6 +322,8 @@
                      onfocus="this.select()" oninput="usernameChanged(this)">
               <input id="d-password" type="password" placeholder="Login password (optional)">
             </div>
+            <textarea id="d-interfaces" rows="3" spellcheck="false" style="font-family: monospace"
+                      placeholder="Interfaces, one per line (optional, Find links fills them on real devices)&#10;Ethernet0/0 192.168.1.1/24&#10;e0/1 10.0.12.1/24"></textarea>
             <button onclick="run(this, addDevice)">Save device</button> <span id="device-saved"></span>
 
             <h3>Link two devices</h3>
@@ -654,6 +659,7 @@ function edit(name) {
   document.getElementById("d-name").scrollIntoView({behavior: "smooth", block: "center"});
   for (const k of ["name", "ip", "vendor"]) document.getElementById("d-" + k).value = d[k] || "";
   document.getElementById("d-protocol").value = d.protocol || "ssh";
+  document.getElementById("d-interfaces").value = (d.interfaces || []).join("\n");
   // A saved username is hidden like the password: the box shows dots. Leave it = keep it,
   // empty it = use the .env username, type a new one = replace it (same rules as before).
   const user = document.getElementById("d-username");
@@ -682,13 +688,13 @@ function tick(id, text) {
 // Save a device and stay here (ready for the next one). Only a problem goes to the Results tab.
 async function addDevice() {
   const d = {};
-  for (const k of ["name", "ip", "vendor", "protocol", "username", "password"]) d[k] = document.getElementById("d-" + k).value;
+  for (const k of ["name", "ip", "vendor", "protocol", "username", "password", "interfaces"]) d[k] = document.getElementById("d-" + k).value;
   if (document.getElementById("d-username").dataset.hidden) delete d.username;  // dots untouched = keep it
   let r;
   try { r = await post("/api/devices", d); } catch (e) { r = {error: "The server did not answer."}; }
   if (!r.ok) return say(`<span class="error">Device not saved: ${esc(r.error || "unknown error")}</span>`);
   tick("device-saved", `${d.name} saved`);
-  for (const k of ["name", "ip", "password"]) document.getElementById("d-" + k).value = "";
+  for (const k of ["name", "ip", "password", "interfaces"]) document.getElementById("d-" + k).value = "";
   resetUsernameBox();
   document.getElementById("d-password").placeholder = "Login password (optional)";
   document.getElementById("d-name").focus();

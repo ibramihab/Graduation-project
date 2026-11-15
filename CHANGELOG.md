@@ -7,6 +7,14 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Type a device's interfaces by hand
+- 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices
+  Find links can't read (simulated or hand-drawn labs). The AI needs them to plan routing. Short names become
+  full ones (`e0/0` -> `Ethernet0/0`); Edit fills the box with the saved interfaces. Files: `index.html`, `web.py`.
+
+### Version badge
+- 🟢 `index.html`: a small "v1.1" badge next to the logo (shows which version you are running).
+
 ### More room for the important parts of the page
 - 🟡 `index.html` only: the big number cards are now small counters on one line under "Network Overview"
   (Down turns red). Availability, Network health and Devices by vendor moved into a panel that opens with

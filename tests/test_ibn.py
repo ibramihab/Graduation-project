@@ -443,3 +443,16 @@ def test_ping_counts_a_real_reply_even_if_the_first_packet_is_lost(monkeypatch):
     assert discovery.ping("unreachable") is False
     assert discovery.ping("other-language") is True
     assert discovery.ping("nothing") is False
+
+
+def test_interfaces_can_be_typed_for_a_device(kb):
+    """For devices Find links can't read (e.g. simulated): the AI needs their interfaces for routing."""
+    client = create_app(kb, FakeLLM({})).test_client()
+    client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated",
+                                      "interfaces": "e0/0 192.168.1.1/24\n\n  Ethernet0/1   10.0.12.1/24 \nlo0 9.9.9.9"})
+    assert kb.get_device("R9")["interfaces"] == ["Ethernet0/0 192.168.1.1/24", "Ethernet0/1 10.0.12.1/24",
+                                                 "Loopback0 9.9.9.9"]
+    client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated", "interfaces": ""})
+    assert "interfaces" not in kb.get_device("R9")  # box emptied in Edit = no interfaces
+    client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated"})  # no box: nothing changes
+    assert "interfaces" not in kb.get_device("R9")
