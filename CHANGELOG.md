@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### RAG, first version: the closest solved examples go into the AI's prompt
+- 🟢 `ibn/intent/rag/` (Intent layer): `sources.py` (where knowledge comes from: examples now, more later),
+  `embedder.py` (bge-m3 via Ollama, or shared words if it's not available), `index.py` (numbers saved once in
+  `data/rag_index.json`), `retriever.py` (asks every enabled source, keeps the closest).
+- 🟢 `knowledge/cisco_ios/examples.json`: 5 sample examples + `knowledge/README.md` (how to add more).
+- 🟡 `translator.py`: one new prompt section. Plan JSON unchanged. Settings `RAG_*` in `.env.example`.
+
 ### The local model stays loaded 15 minutes
 - 🟡 `llm.py`: every Ollama request asks to keep the model in memory 15 minutes after it (Ollama's default: 5).
   New setting `OLLAMA_KEEP_ALIVE` in `.env.example` (e.g. `30m`, `1h`, `-1` = never unload).

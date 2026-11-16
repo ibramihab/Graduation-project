@@ -20,6 +20,7 @@ The plan is only a PROPOSAL. The validation layer checks it next.
 import json
 
 from ..vendors import get_vendor
+from .rag import retrieve
 
 # The exact shape the LLM must answer with.
 PLAN_SCHEMA = {
@@ -66,7 +67,7 @@ Rules:
 
 Vendor notes and examples:
 {vendor_notes}
-
+{rag}
 Devices:
 {devices}
 
@@ -81,6 +82,7 @@ def translate(text: str, devices: list[dict], llm, links: list[dict] = ()) -> di
     visible = [{k: d[k] for k in fields if d.get(k)} for d in devices]
     # .replace (not .format) because the examples contain { } braces
     system = SYSTEM_PROMPT.replace("{vendor_notes}", _vendor_notes(devices))
+    system = system.replace("{rag}", _rag(text, devices))
     system = system.replace("{devices}", json.dumps(visible, indent=2))
     system = system.replace("{links}", "\n".join(f"{l['a']} - {l['b']}" for l in links) or "(unknown)")
     plan = llm.ask_json(system, text, PLAN_SCHEMA)
@@ -94,6 +96,15 @@ def translate(text: str, devices: list[dict], llm, links: list[dict] = ()) -> di
         change["rollback"] = _clean(change.get("rollback", []), wrapper)
     plan["intent"] = text
     return plan
+
+
+def _rag(text: str, devices: list[dict]) -> str:
+    """RAG: the closest solved examples for these vendors (ibn/intent/rag/), or nothing."""
+    found = retrieve(text, [d.get("vendor") for d in devices])
+    if not found:
+        return ""
+    return ("\nThe examples below come from another network: copy the method, but take the device\n"
+            "names, interfaces and IPs from the lists further down.\n\n" + found + "\n")
 
 
 def _vendor_notes(devices: list[dict]) -> str:

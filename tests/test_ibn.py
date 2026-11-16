@@ -23,6 +23,15 @@ class FakeLLM:
         return self.plan
 
 
+@pytest.fixture(autouse=True)
+def rag_for_tests(tmp_path, monkeypatch):
+    """Tests never call Ollama for RAG and never write into the real data/ folder."""
+    from ibn import settings
+    from ibn.intent.rag import index
+    monkeypatch.setattr(settings, "RAG_SEARCH", "keyword")
+    monkeypatch.setattr(index, "INDEX_FILE", str(tmp_path / "rag_index.json"))
+
+
 def make_neo4j():
     """Only runs with  TEST_NEO4J=1 pytest  because it DELETES the devices in Neo4j.
     Never use it on a Neo4j that holds your real network data."""
@@ -489,3 +498,71 @@ def test_ollama_keeps_the_model_loaded_15_minutes(monkeypatch):
     monkeypatch.setattr(llm_module.requests, "post", lambda url, timeout, json: sent.update(json) or Answer())
     llm_module.OllamaLLM().ask_json("system", "user", {})
     assert sent["keep_alive"] == "15m"
+
+
+# ---- RAG (ibn/intent/rag/ + knowledge/) ----
+def test_every_knowledge_example_passes_validation(tmp_path):
+    """Examples teach the AI, so each one must be a plan our own safety checks accept."""
+    from ibn.intent.rag.sources import SOURCES
+    import json
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    examples = json.loads(open("knowledge/cisco_ios/examples.json", encoding="utf-8").read())
+    for name in {c["device"] for e in examples for c in e["plan"]["changes"]}:
+        kb.add_device({"name": name, "ip": "10.9.9.9", "vendor": "cisco_ios", "state": "up"})
+    for e in examples:
+        assert set(e) == {"intent", "plan"}, e
+        result = validate(e["plan"], kb)
+        assert result["ok"], (e["intent"], result["errors"])
+    assert len(SOURCES["examples"].chunks("cisco_ios")) == len(examples)
+
+
+def test_rag_finds_the_closest_examples(monkeypatch):
+    from ibn import settings
+    from ibn.intent.rag import retrieve
+    text = retrieve("add a static route on R3 to 10.0.1.0/24", ["cisco_ios"])
+    assert text.startswith("Similar requests") and "ip route 192.168.2.0" in text
+    assert "ip route" in retrieve("add a static route on R3", ["simulated"])  # acts like Cisco IOS
+    assert retrieve("add a static route", ["huawei"]) == ""                     # no knowledge folder yet
+    monkeypatch.setattr(settings, "RAG_TOP_K", 1)
+    assert retrieve("add a static route on R3", ["cisco_ios"]).count("Request:") == 1
+    monkeypatch.setattr(settings, "RAG_SOURCES", ["examples", "nothing"])     # unknown source: skipped
+    assert "ip route" in retrieve("add a static route on R3", ["cisco_ios"])
+    monkeypatch.setattr(settings, "RAG_ENABLED", False)
+    assert retrieve("add a static route on R3", ["cisco_ios"]) == ""
+
+
+def test_rag_goes_into_the_prompt_only_when_enabled(monkeypatch):
+    from ibn import settings
+    from ibn.intent import translate
+
+    class SpyLLM:
+        def ask_json(self, system, user, schema):
+            self.system = system
+            return {"summary": "x", "changes": []}
+    llm = SpyLLM()
+    translate("add a static route on R1", [{"name": "R1", "vendor": "simulated"}], llm)
+    assert "Similar requests that were solved correctly" in llm.system
+    monkeypatch.setattr(settings, "RAG_ENABLED", False)
+    translate("add a static route on R1", [{"name": "R1", "vendor": "simulated"}], llm)
+    assert "Similar requests" not in llm.system
+
+
+def test_rag_embedding_numbers_are_computed_once(monkeypatch):
+    from ibn import settings
+    from ibn.intent.rag import embedder, retrieve
+    monkeypatch.setattr(settings, "RAG_SEARCH", "embedding")
+    asked = []
+
+    def fake_embed(texts):  # pretend model: "route" texts point one way, the rest another way
+        asked.extend(texts)
+        return [[1.0, 0.0] if "route" in t.lower() else [0.0, 1.0] for t in texts]
+    monkeypatch.setattr(embedder, "embed", fake_embed)
+    assert "ip route" in retrieve("I need a route", ["cisco_ios"])
+    first = len(asked)
+    retrieve("I need a route", ["cisco_ios"])
+    assert len(asked) == first + 1  # second time only the request; the examples come from the index
+
+    def broken(texts):
+        raise ConnectionError("Ollama is off")
+    monkeypatch.setattr(embedder, "embed", broken)
+    assert "ip route" in retrieve("add a static route", ["cisco_ios"])  # falls back to keywords

@@ -1,0 +1,36 @@
+[
+  {"intent": "on R1 add a static route to 192.168.2.0/24 via R2",
+   "plan": {"summary": "Static route on R1 to 192.168.2.0/24 through R2 (10.0.12.2)",
+            "changes": [{"device": "R1", "type": "config",
+                         "commands": ["ip route 192.168.2.0 255.255.255.0 10.0.12.2"],
+                         "rollback": ["no ip route 192.168.2.0 255.255.255.0 10.0.12.2"]}]}},
+
+  {"intent": "block the 192.168.3.0/24 network from reaching 192.168.2.0/24",
+   "plan": {"summary": "On R2, drop traffic from 192.168.3.0/24 to 192.168.2.0/24 arriving from R1",
+            "changes": [{"device": "R2", "type": "config",
+                         "commands": ["ip access-list extended BLOCK_3_TO_2",
+                                      "deny ip 192.168.3.0 0.0.0.255 192.168.2.0 0.0.0.255",
+                                      "permit ip any any",
+                                      "interface Ethernet0/0", "ip access-group BLOCK_3_TO_2 in"],
+                         "rollback": ["interface Ethernet0/0", "no ip access-group BLOCK_3_TO_2 in",
+                                      "no ip access-list extended BLOCK_3_TO_2"]}]}},
+
+  {"intent": "advertise the 192.168.1.0/24 network in ospf area 0 on R1",
+   "plan": {"summary": "Add 192.168.1.0/24 to OSPF process 1, area 0, on R1 (wildcard mask 0.0.0.255)",
+            "changes": [{"device": "R1", "type": "config",
+                         "commands": ["router ospf 1", "network 192.168.1.0 0.0.0.255 area 0"],
+                         "rollback": ["router ospf 1", "no network 192.168.1.0 0.0.0.255 area 0"]}]}},
+
+  {"intent": "create vlan 10 named Sales on SW1 and put port e0/1 in it",
+   "plan": {"summary": "Create VLAN 10 (Sales) on SW1 and make Ethernet0/1 an access port in it",
+            "changes": [{"device": "SW1", "type": "config",
+                         "commands": ["vlan 10", "name Sales",
+                                      "interface Ethernet0/1", "switchport mode access", "switchport access vlan 10"],
+                         "rollback": ["interface Ethernet0/1", "no switchport access vlan 10",
+                                      "no switchport mode access", "no vlan 10"]}]}},
+
+  {"intent": "can R1 reach R2?",
+   "plan": {"summary": "Ping R2's address on the R1-R2 link from R1",
+            "changes": [{"device": "R1", "type": "check",
+                         "commands": ["ping 10.0.12.2"], "rollback": []}]}}
+]
