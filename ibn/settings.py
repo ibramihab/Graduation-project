@@ -12,6 +12,9 @@ LLM_PROVIDER = os.getenv("LLM_PROVIDER", "claude")
 CLAUDE_MODEL = os.getenv("CLAUDE_MODEL", "claude-opus-5-5")
 OLLAMA_URL = os.getenv("OLLAMA_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
+# How long Ollama keeps the model in memory after the last request ("15m", "1h", "-1" = forever).
+# Ollama's own default is 5 minutes; loading the model again takes time.
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "15m")
 
 # --- Knowledge base ---
 # "neo4j" = real graph database (run it with docker compose)

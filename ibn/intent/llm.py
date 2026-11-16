@@ -53,6 +53,8 @@ class OllamaLLM:
             # num_ctx = how much text the model can read at once. Ollama's default (2048)
             # silently cuts off our long prompts, so we raise it.
             "options": {"temperature": 0, "num_ctx": 8192},
+            # keep the model loaded this long after the request (Ollama's default is 5 minutes)
+            "keep_alive": settings.OLLAMA_KEEP_ALIVE,
             "messages": [{"role": "system", "content": system},
                          {"role": "user", "content": user}],
         })

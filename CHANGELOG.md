@@ -7,6 +7,10 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The local model stays loaded 15 minutes
+- 🟡 `llm.py`: every Ollama request asks to keep the model in memory 15 minutes after it (Ollama's default: 5).
+  New setting `OLLAMA_KEEP_ALIVE` in `.env.example` (e.g. `30m`, `1h`, `-1` = never unload).
+
 ### Testing without a lab is easier
 - 🟡 `discovery.py`: "Refresh up/down" marks simulated devices "up" (they live in the program, nothing to ping).
 - 🟡 `validator.py`: with `DRY_RUN=true` a device that is "down" is only a warning, so plans can still be tested.

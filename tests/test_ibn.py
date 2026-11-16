@@ -477,3 +477,15 @@ def test_a_down_device_is_only_a_warning_in_dry_run(kb, monkeypatch):
     monkeypatch.setattr(settings, "DRY_RUN", True)
     result = validate(plan, kb)
     assert result["ok"] and "nothing is sent" in result["warnings"][0]
+
+
+def test_ollama_keeps_the_model_loaded_15_minutes(monkeypatch):
+    from ibn.intent import llm as llm_module
+    sent = {}
+
+    class Answer:
+        def raise_for_status(self): pass
+        def json(self): return {"message": {"content": '{"summary": "x", "changes": []}'}}
+    monkeypatch.setattr(llm_module.requests, "post", lambda url, timeout, json: sent.update(json) or Answer())
+    llm_module.OllamaLLM().ask_json("system", "user", {})
+    assert sent["keep_alive"] == "15m"
