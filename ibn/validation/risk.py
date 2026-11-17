@@ -7,7 +7,8 @@ The score is the sum of six parts (the maximum of each part in brackets):
   topology impact        (15)  a risky command on a single point of failure splits the network
   affected devices       (15)  the share of the network that the change can reach or cut off
   rollback               (10)  missing or incomplete rollback = a failure can't be fully undone
-  conflicts/prerequisites(10)  conflicts with the current network, or missing prerequisites
+  conflicts/prerequisites(10)  conflicts with the current network, missing prerequisites,
+                               or problems found by Batfish
 
 Levels:  0-24 LOW   25-49 MEDIUM   50-74 HIGH   75-100 CRITICAL
 Every part gives a reason, so the user sees WHY the plan got its score.
@@ -160,6 +161,12 @@ def _conflicts(findings):
     elif findings.get("conflict_warnings"):
         points += 5
         why.append(f"{findings['conflict_warnings']} possible conflict(s)")
+    if findings.get("batfish_errors"):
+        points += 10
+        why.append(f"Batfish found {findings['batfish_errors']} problem(s)")
+    elif findings.get("batfish_warnings"):
+        points += 3
+        why.append(f"Batfish gave {findings['batfish_warnings']} warning(s)")
     if findings.get("dependency_warnings") or findings.get("dependency_errors"):
         count = findings.get("dependency_warnings", 0) + findings.get("dependency_errors", 0)
         points += min(5, 3 * count)

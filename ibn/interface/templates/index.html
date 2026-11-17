@@ -151,6 +151,8 @@
   .risk { display: inline-block; padding: 2px 10px; border-radius: 4px; font-weight: 700; color: #111; }
   .risk.LOW { background: var(--good); } .risk.MEDIUM { background: var(--warning); }
   .risk.HIGH { background: #f39c12; } .risk.CRITICAL { background: var(--critical); color: #fff; }
+  .risk.PASS { background: var(--good); } .risk.WARNING { background: var(--warning); }
+  .risk.FAIL { background: var(--critical); color: #fff; } .risk.SKIPPED { background: #6b7079; color: #fff; }
   .small-text { font-size: 12px; color: var(--muted); margin: 6px 0; }
   hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
   #graph { flex: 1; min-height: 200px; border-radius: 6px; background-color: #1b1d21;
@@ -395,6 +397,13 @@ async function sendIntent() {
              ${v.risk.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul></details>`;
     if (v.ok && v.risk.level === "CRITICAL")
       html += `<p class="error">Critical risk: read the reasons above before you approve.</p>`;
+  }
+  const bf = v.batfish;  // optional Batfish analysis (shown only when it ran)
+  if (bf && (bf.status !== "SKIPPED" || bf.results.length)) {
+    html += `<p><b>Batfish analysis:</b> <span class="risk ${esc(bf.status)}">${esc(bf.status)}</span></p>
+             <details><summary>Batfish checks</summary><ul class="small-text">
+             ${bf.results.map(r => `<li><b>${esc(r.status)}</b> ${esc(r.check)}: ${esc(r.message)}</li>`).join("")}
+             </ul></details>`;
   }
   if (v.ok) {
     html += `<p class="ok">&#10003; Validation passed</p>

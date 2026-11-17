@@ -22,6 +22,14 @@ NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
 NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
 NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password123")
 
+# --- Validation: Batfish pre-deployment analysis (optional) ---
+# Batfish server address, e.g. "localhost" (run it with: docker run -d -p 9996:9996 batfish/batfish).
+# Empty = Batfish is off and the validation works as before.
+BATFISH_HOST = os.getenv("BATFISH_HOST", "")
+BATFISH_NETWORK = os.getenv("BATFISH_NETWORK", "ibn")
+# Folder of baseline configs "<device name>.cfg", for devices without a backup in the knowledge base
+BATFISH_CONFIG_DIR = os.getenv("BATFISH_CONFIG_DIR", "")
+
 # --- Infrastructure ---
 # Default login used for devices (one shared account keeps things simple).
 DEVICE_USERNAME = os.getenv("DEVICE_USERNAME", "admin")

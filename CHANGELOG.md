@@ -7,6 +7,19 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Batfish pre-deployment analysis (optional, Cisco IOS / IOS-XE)
+- 🟢 `ibn/validation/batfish_check.py`: Batfish compares the network today (baseline) with the
+  network after the plan (proposed): config validity, undefined references, lost routes,
+  forwarding loops, traffic that would be dropped, ACL lines that never match. PASS / WARNING / FAIL
+  per check; FAIL = validation error, WARNING = warning. Baseline = the device's config backup or
+  a file in `BATFISH_CONFIG_DIR` (never invented). Off until `BATFISH_HOST` is set.
+- 🟢 `validate()` also returns `"batfish": {"status", "results"}` (`ok`/`errors`/`warnings`/`risk` unchanged);
+  Batfish problems also count in the risk score. Files: `validator.py`, `risk.py`.
+- 🟢 `settings.py`, `.env.example`: `BATFISH_HOST`, `BATFISH_NETWORK`, `BATFISH_CONFIG_DIR`.
+  `requirements.txt`: `pybatfish`. `index.html`: a "Batfish analysis" status + its checks under the plan.
+- 🟢 `tests/batfish_sample/configs/`: a sample Cisco IOS network (R1 - R2 - R3, OSPF) and 7 tests
+  (the 4 that need a Batfish server run with `TEST_BATFISH=1 pytest`).
+
 ### Smarter validation: rollback, conflicts, prerequisites and a risk score
 - 🟢 `ibn/validation/` (new files `config_model.py`, `state.py`, `rollback.py`, `conflicts.py`,
   `dependencies.py`, `risk.py`): the plan is simulated on a small model of each device's config

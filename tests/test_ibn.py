@@ -583,3 +583,107 @@ def test_risk_is_sent_to_the_web_page(kb):
     llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["vlan 30"], ["no vlan 30"])]})
     plan = create_app(kb, llm).test_client().post("/api/intent", json={"text": "vlan 30"}).json
     assert plan["validation"]["risk"]["level"] in ("LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+
+# ---------------- Batfish pre-deployment analysis ----------------
+from ibn import settings  # noqa: E402
+from ibn.validation import batfish_check  # noqa: E402
+
+SAMPLE_CONFIGS = os.path.join(os.path.dirname(__file__), "batfish_sample", "configs")
+
+
+def test_batfish_applies_the_plan_to_the_config_text():
+    base = open(os.path.join(SAMPLE_CONFIGS, "R2.cfg")).read()
+    new = batfish_check.apply_commands(base, [
+        "interface Ethernet0/1", "shutdown", "exit",
+        "interface Ethernet0/2", "no ip access-group MGMT-ONLY in", "exit",
+        "no ip access-list extended MGMT-ONLY",
+        "ip route 0.0.0.0 0.0.0.0 10.1.2.1",
+        "router ospf 1", "no network 10.2.3.0 0.0.0.255 area 0",
+        "interface Loopback0", "ip address 10.0.0.22 255.255.255.255"])
+    assert " shutdown" in new.split("interface Ethernet0/1")[1].split("!")[0]
+    assert "MGMT-ONLY" not in new
+    assert "ip route 0.0.0.0 0.0.0.0 10.1.2.1" in new
+    assert "network 10.2.3.0" not in new and "network 10.1.2.0" in new
+    assert "10.0.0.22" in new and "10.0.0.2 255" not in new  # the new IP replaced the old one
+
+
+def test_batfish_is_off_by_default(kb, monkeypatch):
+    monkeypatch.setattr(settings, "BATFISH_HOST", "")
+    result = validate({"changes": [change("SW1", ["vlan 30"], ["no vlan 30"])]}, kb)
+    assert result["ok"] and result["batfish"]["status"] == "SKIPPED"
+
+
+def test_batfish_only_uses_real_configs(kb, monkeypatch):
+    """No config = not analyzed (and Batfish is not even contacted)."""
+    monkeypatch.setattr(settings, "BATFISH_HOST", "nowhere.invalid")
+    monkeypatch.setattr(settings, "BATFISH_CONFIG_DIR", "")
+    kb.add_device({"name": "R5", "ip": "10.0.0.5", "vendor": "cisco_ios", "state": "up"})
+    plan = {"changes": [change("SW1", ["vlan 30"], ["no vlan 30"]),       # simulated: not IOS
+                        change("R5", ["interface Loopback5"], ["no interface Loopback5"])]}  # no config
+    result = validate(plan, kb)
+    text = " ".join(r["message"] for r in result["batfish"]["results"])
+    assert result["ok"] and result["batfish"]["status"] == "SKIPPED"
+    assert "supports Cisco IOS only" in text and "no config for it" in text
+    assert not any("Batfish" in w for w in result["warnings"])  # not a problem with the plan
+
+
+@pytest.fixture
+def batfish_lab(tmp_path, monkeypatch):
+    """The sample network (tests/batfish_sample): R1 - R2 - R3 with OSPF. Needs a Batfish server:
+        docker run -d -p 9996:9996 batfish/batfish      then      TEST_BATFISH=1 pytest"""
+    if os.getenv("TEST_BATFISH") != "1":
+        pytest.skip("set TEST_BATFISH=1 (and run a Batfish server) to test Batfish")
+    monkeypatch.setattr(settings, "BATFISH_HOST", os.getenv("BATFISH_HOST", "localhost"))
+    monkeypatch.setattr(settings, "BATFISH_CONFIG_DIR", SAMPLE_CONFIGS)
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    for name in ("R1", "R2", "R3"):
+        kb.add_device({"name": name, "ip": f"10.0.0.{name[1]}", "vendor": "cisco_ios", "state": "up"})
+    kb.add_link("R1", "R2")
+    kb.add_link("R2", "R3")
+    return kb
+
+
+def batfish_results(kb, *changes):
+    result = validate({"changes": list(changes)}, kb)
+    return result, {(r["check"], r["status"]) for r in result["batfish"]["results"]}
+
+
+def test_batfish_passes_a_safe_change(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R1", ["interface Loopback5", "ip address 5.5.5.5 255.255.255.255",
+               "router ospf 1", "network 5.5.5.5 0.0.0.0 area 0"],
+        ["router ospf 1", "no network 5.5.5.5 0.0.0.0 area 0", "exit", "no interface Loopback5"]))
+    assert result["ok"] and result["batfish"]["status"] == "PASS"
+    assert {"validity", "references", "routing", "reachability", "acl"} == {c for c, _ in checks}
+
+
+def test_batfish_warns_about_lost_routes_and_reachability(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R2", ["interface Ethernet0/1", "shutdown"], ["interface Ethernet0/1", "no shutdown"]))
+    assert result["ok"] and result["batfish"]["status"] == "WARNING"  # warns, the user decides
+    assert ("routing", "WARNING") in checks and ("reachability", "WARNING") in checks
+    assert "R1 loses 10.0.3.0/24" in " ".join(result["warnings"])
+
+
+def test_batfish_fails_on_undefined_acl_and_loops(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R2", ["interface Ethernet0/0", "ip access-group NOPE in"],
+        ["interface Ethernet0/0", "no ip access-group NOPE in"]))
+    assert not result["ok"] and ("references", "FAIL") in checks
+    assert any("Batfish (references)" in e and "NOPE" in e for e in result["errors"])
+    result, checks = batfish_results(
+        batfish_lab,
+        change("R1", ["ip route 10.9.9.0 255.255.255.0 10.1.2.2"], ["no ip route 10.9.9.0 255.255.255.0 10.1.2.2"]),
+        change("R2", ["ip route 10.9.9.0 255.255.255.0 10.1.2.1"], ["no ip route 10.9.9.0 255.255.255.0 10.1.2.1"]))
+    assert not result["ok"] and ("routing", "FAIL") in checks
+
+
+def test_batfish_finds_acl_lines_that_never_match(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R3", ["ip access-list extended BLOCK-LAN1", "permit ip any any", "deny ip 10.0.1.0 0.0.0.255 any",
+               "interface Ethernet0/0", "ip access-group BLOCK-LAN1 in"],
+        ["interface Ethernet0/0", "no ip access-group BLOCK-LAN1 in", "exit",
+         "no ip access-list extended BLOCK-LAN1"]))
+    assert ("acl", "WARNING") in checks
+    assert "can never match" in " ".join(result["warnings"])

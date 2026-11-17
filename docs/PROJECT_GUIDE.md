@@ -136,7 +136,8 @@ Graduation-project/
 │   │   ├── rollback.py                       does the rollback really undo the change?
 │   │   ├── conflicts.py                      VLAN / IP / interface conflicts
 │   │   ├── dependencies.py                   missing prerequisites (VLANs, port modes, ACLs...)
-│   │   └── risk.py                           risk score 0-100 + level + reasons
+│   │   ├── risk.py                           risk score 0-100 + level + reasons
+│   │   └── batfish_check.py                  (optional) Batfish: network before vs after the plan
 │   │
 │   ├── vendors/                   USED BY ALL LAYERS: one file per vendor
 │   │   ├── base.py                [CORE]     what a vendor file contains (VendorProfile)
@@ -335,6 +336,18 @@ line; FortiGate and MikroTik get simpler rules.
 12. **Risk score** (`risk.py`): 0-100 = command severity (30) + device criticality (20) +
     topology impact (15) + affected devices (15) + rollback (10) + conflicts/prerequisites (10).
     0-24 LOW, 25-49 MEDIUM, 50-74 HIGH, 75-100 CRITICAL, with one reason per part.
+
+13. **Batfish** (`batfish_check.py`, optional, Cisco IOS / IOS-XE): Batfish builds a model of
+    the whole network from the configs, once for today (**baseline**) and once with the plan
+    applied (**proposed**), and compares them: config validity, undefined references (e.g. an
+    ACL applied but never defined), lost routes, forwarding loops, traffic that would be
+    dropped, ACL lines that can never match. Each check is PASS / WARNING / FAIL; a FAIL is an
+    error, a WARNING a warning. Baseline configs come only from real data: the device's
+    `last_config` backup, or a file `<name>.cfg` in `BATFISH_CONFIG_DIR`. Devices with neither
+    (or another vendor) are SKIPPED. Off until `BATFISH_HOST` is set in `.env`:
+    `docker run -d -p 9996:9996 batfish/batfish`, then `BATFISH_HOST=localhost`.
+    Try it with the sample network in `tests/batfish_sample/configs/` (R1 - R2 - R3, OSPF):
+    `BATFISH_CONFIG_DIR=tests/batfish_sample/configs`. Tests: `TEST_BATFISH=1 pytest`.
 
 Errors **block** the plan (no Approve button), and are sent back to the AI for one more
 try. Warnings and the risk are shown, you decide (a CRITICAL risk does not block).
