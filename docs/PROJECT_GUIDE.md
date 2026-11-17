@@ -130,7 +130,13 @@ Graduation-project/
 │   │   └── translator.py          [CORE]     instructions + examples for the AI, the plan shape
 │   │
 │   ├── validation/                LAYER 3
-│   │   └── validator.py           [CORE]     the safety checks
+│   │   ├── validator.py           [CORE]     the safety checks (calls the files below)
+│   │   ├── config_model.py                   a small model of a device's config (before/after)
+│   │   ├── state.py                          what a device looks like now (backup + history)
+│   │   ├── rollback.py                       does the rollback really undo the change?
+│   │   ├── conflicts.py                      VLAN / IP / interface conflicts
+│   │   ├── dependencies.py                   missing prerequisites (VLANs, port modes, ACLs...)
+│   │   └── risk.py                           risk score 0-100 + level + reasons
 │   │
 │   ├── vendors/                   USED BY ALL LAYERS: one file per vendor
 │   │   ├── base.py                [CORE]     what a vendor file contains (VendorProfile)
@@ -293,7 +299,7 @@ request, answer in exactly this JSON shape".
 
 ### Layer 3: Validation (`ibn/validation/`)
 
-**`validator.py`** (112 lines). `validate(plan) → {"ok", "errors", "warnings"}`. Checks:
+**`validator.py`**. `validate(plan) → {"ok", "errors", "warnings", "risk"}`. Basic checks:
 1. the device exists in the knowledge base
 2. there is a driver for its vendor
 3. the device isn't "down"
@@ -304,7 +310,34 @@ request, answer in exactly this JSON shape".
 7. physical interface names (`Ethernet0/0`, `Gi0/1`, `GE0/0/1`...) really exist on that device
 8. a risky change on a single point of failure gets a warning saying what would be cut off
 
-Errors **block** the plan (no Approve button). Warnings are shown, you decide.
+**Advanced checks.** They read what the knowledge base knows about a device (its config
+backup `last_config`, the history, the interface IPs) into a small config model
+(`config_model.py`, `state.py`), then **simulate** the plan: *before* → *after* the
+commands → *after the rollback*. Only Cisco-like and Huawei configs are simulated line by
+line; FortiGate and MikroTik get simpler rules.
+
+9. **Rollback** (`rollback.py`): the rollback must bring every changed item back to how it
+   was. Explains what is not removed / not restored. **Error** if the rollback would delete
+   something that existed *before* the change (e.g. `no vlan 10` when VLAN 10 was in use),
+   tries to delete a physical port, uses the wrong word (`no` vs Huawei `undo`), contains a
+   check command, or leaves a FortiGate block without `end`.
+10. **Conflicts** (`conflicts.py`): invalid VLAN IDs, deleting/renaming default VLANs,
+    renaming a VLAN, a VLAN name already used, the same VLAN ID with another name on another
+    switch, an IP already used elsewhere, overlapping subnets on one device,
+    network/broadcast addresses, one setting given two values in a plan, changes to the
+    interface that holds the management IP. Only what the plan **changes** is checked, so
+    existing valid config is never reported.
+11. **Prerequisites** (`dependencies.py`): VLANs must exist (only when the backup lists
+    them), access/trunk settings need the right port mode, an IP on a switch port needs
+    `no switchport`, applied ACLs must be defined, static route next hops must be in a
+    connected subnet, OSPF `network` lines must match an interface, both ends of a link
+    should get addresses in the same subnet.
+12. **Risk score** (`risk.py`): 0-100 = command severity (30) + device criticality (20) +
+    topology impact (15) + affected devices (15) + rollback (10) + conflicts/prerequisites (10).
+    0-24 LOW, 25-49 MEDIUM, 50-74 HIGH, 75-100 CRITICAL, with one reason per part.
+
+Errors **block** the plan (no Approve button), and are sent back to the AI for one more
+try. Warnings and the risk are shown, you decide (a CRITICAL risk does not block).
 
 The rule **lists** themselves are in the vendor files (next section).
 👉 To add a safety rule you add one line to `blocked` or `warn` in `ibn/vendors/<vendor>.py`.
@@ -487,9 +520,9 @@ These two folder names are a **Flask convention** (Flask looks for exactly these
 |---|---|---|---|
 | Device (node) | name, ip, vendor, protocol | you (Save device), Scan | everyone |
 | `state` | `up` / `down` | Refresh up/down | validation (blocks devices that are down) |
-| `interfaces` | `Ethernet0/0 10.1.2.1` | Find links & IPs | the AI (real names and IPs), validation (checks names) |
+| `interfaces` | `Ethernet0/0 10.1.2.1` | Find links & IPs | the AI (real names and IPs), validation (checks names, IP conflicts) |
 | Link (edge) | R1 — R2 | you (Link), Find links (CDP) | the topology graph |
-| `last_config` | full `show running-config` text | control layer, **before** every change (backup) | you, to restore by hand |
+| `last_config` | full `show running-config` text | control layer, **before** every change (backup) | you, to restore by hand; validation (VLANs, ports, ACLs the device already has) |
 | History (Change) | time, request, commands, success, device output | control layer, after every plan | the History button |
 | `username`/`password` (optional) | per-device login | you (Save device) | drivers only, **never** sent to the AI or shown on the page |
 

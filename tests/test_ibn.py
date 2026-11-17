@@ -154,7 +154,7 @@ def test_happy_path(kb):
 def test_failure_rolls_back_every_device(kb):
     llm = FakeLLM({"summary": "x", "changes": [
         change("R1", ["ip route 0.0.0.0 0.0.0.0 10.0.0.254"], ["no ip route 0.0.0.0 0.0.0.0 10.0.0.254"]),
-        change("SW1", ["this is invalid"], ["undo sw1"]),
+        change("SW1", ["this is invalid"], ["no sw1"]),  # Cisco-like: "no", not "undo"
     ]})
     plan = pipeline.propose("break it", kb, llm)
     result = pipeline.approve(plan["id"], kb)
@@ -456,3 +456,130 @@ def test_interfaces_can_be_typed_for_a_device(kb):
     assert "interfaces" not in kb.get_device("R9")  # box emptied in Edit = no interfaces
     client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated"})  # no box: nothing changes
     assert "interfaces" not in kb.get_device("R9")
+
+
+# ---------------- advanced validation: rollback, conflicts, prerequisites, risk ----------------
+SW1_BACKUP = ("hostname SW1\nvlan 10\n name HR\n!\nvlan 20\n name Sales\n!\n"
+              "interface Ethernet0/1\n switchport mode trunk\n!")
+
+
+def messages(result):
+    return " | ".join(result["errors"] + result["warnings"])
+
+
+def test_rollback_must_undo_the_change(kb):
+    good = {"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}
+    assert validate(good, kb)["ok"] and not validate(good, kb)["warnings"]
+    incomplete = {"changes": [change("R1", ["interface Loopback5", "description x"], ["no description"])]}
+    assert "rollback does not remove 'interface Loopback5'" in messages(validate(incomplete, kb))
+
+
+def test_rollback_must_not_delete_what_existed_before(kb):
+    kb.update_device("SW1", last_config=SW1_BACKUP)
+    bad = {"changes": [change("SW1", ["vlan 10", "name Finance"], ["no vlan 10"])]}
+    result = validate(bad, kb)
+    assert not result["ok"] and "existed BEFORE this change" in result["errors"][0]
+    good = {"changes": [change("SW1", ["vlan 10", "name Finance"], ["vlan 10", "name HR"])]}
+    assert validate(good, kb)["ok"]
+
+
+def test_rollback_must_restore_a_replaced_ip(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/1 10.1.1.1"])
+    commands = ["interface Ethernet0/1", "ip address 10.1.9.1 255.255.255.0"]
+    lazy = {"changes": [change("R1", commands, ["interface Ethernet0/1", "no ip address"])]}
+    assert "does not restore 'ip address 10.1.1.1'" in messages(validate(lazy, kb))
+    restore = ["interface Ethernet0/1", "ip address 10.1.1.1 255.255.255.0"]
+    assert "restore" not in messages(validate({"changes": [change("R1", commands, restore)]}, kb))
+
+
+def test_rollback_follows_vendor_rules(kb):
+    plan = {"changes": [change("R1", ["interface Ethernet0/1", "description x"], ["no interface Ethernet0/1"])]}
+    assert "physical port" in validate(plan, kb)["errors"][0]
+    plan = {"changes": [change("R1", ["vlan 30"], ["undo vlan 30"])]}  # Cisco-like says "no"
+    assert "uses 'undo'" in validate(plan, kb)["errors"][0]
+    kb.add_device({"name": "FW1", "ip": "10.0.0.5", "vendor": "fortigate", "state": "up"})
+    plan = {"changes": [change("FW1", ["config firewall policy", "edit 1001", "set action deny", "next", "end"],
+                               ["config firewall policy", "delete 1001"])]}  # block never closed
+    assert "closes 0 with 'end'" in validate(plan, kb)["errors"][0]
+
+
+def test_vlan_conflicts(kb):
+    kb.update_device("SW1", last_config=SW1_BACKUP)
+    kb.add_device({"name": "SW3", "ip": "10.0.0.3", "vendor": "simulated", "state": "up",
+                   "last_config": "vlan 30\n name Finance\n!"})
+    same_again = {"changes": [change("SW1", ["vlan 20", "name Sales"], [])]}
+    assert "conflict" not in messages(validate(same_again, kb))  # existing and valid: not a conflict
+    rename = {"changes": [change("SW1", ["vlan 10", "name Sales"], ["vlan 10", "name HR"])]}
+    text = messages(validate(rename, kb))
+    assert "renames it to 'Sales'" in text and "already used by VLAN 20" in text
+    other_switch = {"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}
+    assert "VLAN 30 is called 'Finance' on SW3" in messages(validate(other_switch, kb))
+    assert "not valid" in validate({"changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}, kb)["errors"][0]
+    assert "default VLAN" in validate({"changes": [change("SW1", ["no vlan 1"], ["vlan 1"])]}, kb)["errors"][0]
+
+
+def test_ip_conflicts(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.1.2.1", "Ethernet0/1 10.1.1.1"])
+    kb.add_device({"name": "R2", "ip": "10.0.0.9", "vendor": "simulated", "state": "up",
+                   "interfaces": ["Ethernet0/0 10.1.2.2"]})
+
+    def loopback(address):
+        return {"changes": [change("R1", ["interface Loopback5", f"ip address {address}"],
+                                   ["no interface Loopback5"])]}
+    assert validate(loopback("5.5.5.5 255.255.255.255"), kb)["ok"]
+    assert "already used by R2 (Ethernet0/0)" in validate(loopback("10.1.2.2 255.255.255.255"), kb)["errors"][0]
+    assert "overlaps Ethernet0/0" in validate(loopback("10.1.2.9 255.255.255.0"), kb)["errors"][0]
+    assert "network address" in validate(loopback("10.9.9.0 255.255.255.0"), kb)["errors"][0]
+    assert "not a valid IP" in validate(loopback("10.9.9.1 255.0.255.0"), kb)["errors"][0]
+    same = {"changes": [change("R1", ["interface Ethernet0/1", "ip address 10.1.1.1 255.255.255.0"], [])]}
+    assert "conflict" not in messages(validate(same, kb))  # its own address again: fine
+
+
+def test_interface_conflicts(kb):
+    twice = {"changes": [change("SW1", ["interface e0/0", "description A"], ["interface e0/0", "no description"]),
+                         change("SW1", ["interface e0/0", "description B"], ["interface e0/0", "no description"])]}
+    assert "set twice in this plan" in validate(twice, kb)["errors"][0]
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2"])  # 10.0.0.2 = how we reach SW1
+    cut = {"changes": [change("SW1", ["interface Vlan1", "shutdown"], ["interface Vlan1", "no shutdown"])]}
+    result = validate(cut, kb)
+    assert "holds the management address" in messages(result)
+    assert "could cut the connection" in messages(result)
+
+
+def test_missing_prerequisites(kb):
+    kb.update_device("SW1", last_config=SW1_BACKUP)
+    trunk_port = {"changes": [change("SW1", ["interface Ethernet0/1", "switchport access vlan 40"],
+                                     ["interface Ethernet0/1", "no switchport access vlan"])]}
+    text = messages(validate(trunk_port, kb))
+    assert "is a trunk port" in text and "VLAN 40 (access VLAN of Ethernet0/1) does not exist" in text
+    good = {"changes": [change("SW1", ["interface Ethernet0/0", "switchport mode access", "switchport access vlan 20"],
+                               ["interface Ethernet0/0", "no switchport access vlan", "no switchport mode"])]}
+    assert not validate(good, kb)["warnings"]
+    acl = {"changes": [change("R1", ["interface Ethernet0/0", "ip access-group NOPE in"],
+                              ["interface Ethernet0/0", "no ip access-group NOPE in"])]}
+    assert "ACL 'NOPE' is applied" in messages(validate(acl, kb))
+    kb.update_device("R1", last_config="interface Ethernet0/0\n ip address 10.1.2.1 255.255.255.0\n!")
+    route = {"changes": [change("R1", ["ip route 0.0.0.0 0.0.0.0 10.9.9.9"], ["no ip route 0.0.0.0 0.0.0.0 10.9.9.9"])]}
+    assert "not in any connected subnet" in messages(validate(route, kb))
+    own = {"changes": [change("R1", ["ip route 0.0.0.0 0.0.0.0 10.1.2.1"], ["no ip route 0.0.0.0 0.0.0.0 10.1.2.1"])]}
+    assert "own address" in validate(own, kb)["errors"][0]
+
+
+def test_risk_score(kb):
+    read_only = validate({"changes": [change("R1", ["ping 10.1.1.1"], [], "check")]}, kb)["risk"]
+    assert read_only == {"score": 0, "level": "LOW", "reasons": read_only["reasons"]}
+    build_lab(kb)
+    small = validate({"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}, kb)["risk"]
+    assert small["level"] == "LOW" and len(small["reasons"]) == 6
+    shut = {"changes": [change("R2", ["interface e0/1", "shutdown"], ["interface e0/1", "no shutdown"])]}
+    risky = validate(shut, kb)["risk"]
+    assert risky["level"] == "HIGH" and "single point of failure" in " ".join(risky["reasons"])
+    shut["changes"][0]["rollback"] = []
+    worst = validate(shut, kb)
+    assert worst["risk"]["level"] == "CRITICAL" and worst["ok"]  # CRITICAL warns, it does not block
+
+
+def test_risk_is_sent_to_the_web_page(kb):
+    llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["vlan 30"], ["no vlan 30"])]})
+    plan = create_app(kb, llm).test_client().post("/api/intent", json={"text": "vlan 30"}).json
+    assert plan["validation"]["risk"]["level"] in ("LOW", "MEDIUM", "HIGH", "CRITICAL")

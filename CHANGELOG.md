@@ -7,6 +7,18 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Smarter validation: rollback, conflicts, prerequisites and a risk score
+- 🟢 `ibn/validation/` (new files `config_model.py`, `state.py`, `rollback.py`, `conflicts.py`,
+  `dependencies.py`, `risk.py`): the plan is simulated on a small model of each device's config
+  (from its backup and history). New checks: the rollback really undoes the change (and never
+  deletes what existed before), VLAN / IP / interface conflicts, missing prerequisites (VLANs,
+  port modes, ACLs, next hops). All 8 old checks are unchanged.
+- 🟢 `validate()` also returns `"risk": {"score", "level", "reasons"}` (0-100, LOW / MEDIUM / HIGH /
+  CRITICAL). `ok`, `errors`, `warnings` are unchanged; CRITICAL warns, it does not block.
+- 🟢 `index.html`: a colored risk badge + "Why this score" under the plan.
+- 🟡 `tests/test_ibn.py`: 10 new tests; one old test's fake rollback `undo sw1` became `no sw1`
+  (Cisco-like devices say "no"; "undo" is now refused).
+
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices
   Find links can't read (simulated or hand-drawn labs). The AI needs them to plan routing. Short names become
