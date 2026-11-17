@@ -138,7 +138,8 @@ Graduation-project/
 │   │   ├── __init__.py            [CORE]     the list of vendors
 │   │   ├── cisco_ios/             [CORE]     Cisco IOS (your EVE-NG lab):
 │   │   │   ├── profile.py                    the rules for every layer
-│   │   │   └── examples.json                 solved requests for the AI (RAG)
+│   │   │   ├── examples.json                 solved requests for the AI (RAG)
+│   │   │   └── docs/                         Cisco documentation as .txt (RAG; stays on your laptop)
 │   │   ├── huawei/, fortigate/, cisco_nxos/, arista_eos/,
 │   │   │   mikrotik_routeros/     [OPTIONAL] other vendors (profile.py; examples.json later)
 │   │   └── simulated/             [OPTIONAL] the fake device (acts like Cisco IOS, uses its examples)

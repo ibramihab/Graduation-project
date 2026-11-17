@@ -566,3 +566,25 @@ def test_rag_embedding_numbers_are_computed_once(monkeypatch):
         raise ConnectionError("Ollama is off")
     monkeypatch.setattr(embedder, "embed", broken)
     assert "ip route" in retrieve("add a static route", ["cisco_ios"])  # falls back to keywords
+
+
+def test_rag_vendor_docs_are_cut_into_pieces_and_searched(monkeypatch, tmp_path):
+    from ibn import settings
+    from ibn.intent.rag import retrieve, sources
+    docs = tmp_path / "cisco_ios" / "docs"
+    docs.mkdir(parents=True)
+    (docs / "README.md").write_text("how to use this folder", encoding="utf-8")  # never searched
+    (docs / "routing.txt").write_text(
+        "ip route prefix mask next-hop\nUse 'no ip route' to remove a static route.\n\n"
+        + "filler text about something else. " * 60 + "\n\n"
+        "router ospf process-id\nnetwork address wildcard-mask area area-id", encoding="utf-8")
+    monkeypatch.setattr(sources, "VENDORS_DIR", tmp_path)
+    pieces = sources.DocsSource().chunks("cisco_ios")
+    assert len(pieces) == 3 and all(len(p["search"]) <= sources.DocsSource.MAX_CHARS for p in pieces)
+    assert all("how to use this folder" not in p["text"] for p in pieces)
+    monkeypatch.setattr(settings, "RAG_SOURCES", ["docs"])
+    monkeypatch.setattr(settings, "RAG_TOP_K", 1)
+    text = retrieve("remove the static route with no ip route", ["simulated"])
+    assert text.startswith("Relevant parts of the vendor documentation") and "[routing]" in text
+    assert "no ip route" in text and "router ospf" not in text
+    assert retrieve("static route", ["huawei"]) == ""  # no docs folder: nothing, no error

@@ -8,6 +8,7 @@ ibn/vendors/
   cisco_ios/
     profile.py           <- the rules: login type, show commands, dangerous commands, AI rules
     examples.json        <- the AI's knowledge (RAG): solved requests
+    docs/                <- the vendor's documentation as .txt files (RAG; stays on your laptop)
   huawei/
     profile.py           <- examples.json can be added any time, no code change
 ```
@@ -21,6 +22,10 @@ ibn/vendors/
 3. Run `python -m pytest`: a test checks that every Cisco example passes the validation layer.
 
 The program notices changed examples by itself (no extra command).
+
+## Adding documentation
+Put text files in `<vendor>/docs/` (see the README there). The program cuts them into small pieces and
+sends the AI only the closest ones. They are not uploaded to GitHub (copyright and size).
 
 ## Adding a vendor
 Copy a similar folder, change `profile.py`, add the vendor to the list in `__init__.py`.

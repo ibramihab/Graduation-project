@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### RAG reads vendor documentation too
+- 🟢 New RAG source "docs" (`ibn/intent/rag/sources.py`): text files in `ibn/vendors/<vendor>/docs/` are cut
+  into pieces of ~300 tokens; the closest pieces go into the prompt. `RAG_SOURCES=examples,docs` (default).
+- 🟢 `.gitignore`: those doc files stay on each laptop (copyright, size); only `docs/README.md` is on GitHub.
+
 ### One folder per vendor: its rules and its AI knowledge together
 - 🟡 `ibn/vendors/cisco_ios.py` -> `ibn/vendors/cisco_ios/profile.py` (same for every vendor, content unchanged).
   Imports are unchanged (`from ibn.vendors import get_vendor`).

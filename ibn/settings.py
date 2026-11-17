@@ -18,7 +18,7 @@ OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "15m")
 
 # --- RAG: add the closest solved examples (ibn/vendors/<vendor>/examples.json) to the AI's prompt ---
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
-RAG_SOURCES = [s.strip() for s in os.getenv("RAG_SOURCES", "examples").split(",") if s.strip()]
+RAG_SOURCES = [s.strip() for s in os.getenv("RAG_SOURCES", "examples,docs").split(",") if s.strip()]
 RAG_SEARCH = os.getenv("RAG_SEARCH", "embedding")      # "embedding" (needs RAG_EMBED_MODEL) or "keyword"
 RAG_EMBED_MODEL = os.getenv("RAG_EMBED_MODEL", "bge-m3")
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))             # how many chunks per source go into the prompt
