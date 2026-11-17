@@ -16,7 +16,7 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "llama3.1")
 # Ollama's own default is 5 minutes; loading the model again takes time.
 OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "15m")
 
-# --- RAG: add the closest solved examples (knowledge/<vendor>/) to the AI's prompt ---
+# --- RAG: add the closest solved examples (ibn/vendors/<vendor>/examples.json) to the AI's prompt ---
 RAG_ENABLED = os.getenv("RAG_ENABLED", "true").lower() == "true"
 RAG_SOURCES = [s.strip() for s in os.getenv("RAG_SOURCES", "examples").split(",") if s.strip()]
 RAG_SEARCH = os.getenv("RAG_SEARCH", "embedding")      # "embedding" (needs RAG_EMBED_MODEL) or "keyword"

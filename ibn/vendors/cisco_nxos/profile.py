@@ -1,7 +1,7 @@
 """Cisco NX-OS (Nexus switches). Same safety rules as IOS, different examples."""
 from dataclasses import replace
 
-from .cisco_ios import PROFILE as IOS
+from ..cisco_ios import PROFILE as IOS
 
 PROFILE = replace(
     IOS,

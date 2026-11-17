@@ -121,7 +121,7 @@ Each person mainly works in **one layer = one folder**. Fill in the names:
 | Layer | Folder(s) | Owner |
 |---|---|---|
 | 1 Interface + Knowledge base | `ibn/interface/`, `ibn/knowledge/` | |
-| 2 Intent (AI) | `ibn/intent/`, the `ai_hints` in `ibn/vendors/*.py` | |
+| 2 Intent (AI) | `ibn/intent/`, and in each vendor folder `ibn/vendors/<vendor>/`: `ai_hints`, `examples.json` | |
 | 3 Validation + 4 Control | `ibn/validation/`, `ibn/control/` | |
 | 5 Infrastructure + discovery | `ibn/infrastructure/`, `ibn/vendors/` | |
 

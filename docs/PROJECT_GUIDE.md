@@ -111,7 +111,6 @@ Graduation-project/
 ├── CHANGELOG.md                   [SUPPORT]  list of every change, newest first
 ├── docs/PROJECT_GUIDE.md          [SUPPORT]  this guide
 ├── lab/VPN_lab_config_...txt      [SUPPORT]  the Cisco configs for your EVE-NG lab (notes, not code)
-├── knowledge/<vendor>/           [SUPPORT]  knowledge for the AI (RAG): examples.json, one folder per vendor
 ├── .gitignore                     [SUPPORT]  tells Git which files never to upload
 ├── .gitattributes                 [SUPPORT]  keeps .bat files in Windows format
 ├── .vscode/settings.json          [SUPPORT]  hides the [AUTO] folders in VS Code
@@ -134,13 +133,15 @@ Graduation-project/
 │   ├── validation/                LAYER 3
 │   │   └── validator.py           [CORE]     the safety checks
 │   │
-│   ├── vendors/                   USED BY ALL LAYERS: one file per vendor
-│   │   ├── base.py                [CORE]     what a vendor file contains (VendorProfile)
+│   ├── vendors/                   USED BY ALL LAYERS: one FOLDER per vendor
+│   │   ├── base.py                [CORE]     what a vendor profile contains (VendorProfile)
 │   │   ├── __init__.py            [CORE]     the list of vendors
-│   │   ├── cisco_ios.py           [CORE]     Cisco IOS (your EVE-NG lab)
-│   │   ├── huawei.py, fortigate.py, cisco_nxos.py, arista_eos.py,
-│   │   │   mikrotik_routeros.py   [OPTIONAL] other vendors
-│   │   └── simulated.py           [OPTIONAL] the fake device (acts like Cisco IOS)
+│   │   ├── cisco_ios/             [CORE]     Cisco IOS (your EVE-NG lab):
+│   │   │   ├── profile.py                    the rules for every layer
+│   │   │   └── examples.json                 solved requests for the AI (RAG)
+│   │   ├── huawei/, fortigate/, cisco_nxos/, arista_eos/,
+│   │   │   mikrotik_routeros/     [OPTIONAL] other vendors (profile.py; examples.json later)
+│   │   └── simulated/             [OPTIONAL] the fake device (acts like Cisco IOS, uses its examples)
 │   │
 │   ├── control/                   LAYER 4
 │   │   └── controller.py          [CORE]     apply, rollback, check steps, history
@@ -657,8 +658,9 @@ modified and extended. The rule is simple:
 ## Part 6: How to upgrade each layer (where to edit)
 
 ### Add a vendor
-1. Copy a file in `ibn/vendors/` (e.g. `huawei.py`) to `ibn/vendors/<new>.py` and change
-   the values (Netmiko type, commands, dangerous commands, AI examples).
+1. Copy a vendor folder in `ibn/vendors/` (e.g. `huawei/`) to `ibn/vendors/<new>/` and change
+   `profile.py` (Netmiko type, commands, dangerous commands, AI rules). Optionally add
+   `examples.json` (solved requests for the AI).
 2. Add it to the list in `ibn/vendors/__init__.py`.
 3. Only if it needs special handling (e.g. Juniper's `commit`): a small driver class
    and one line in `DRIVERS` (`drivers/__init__.py`).

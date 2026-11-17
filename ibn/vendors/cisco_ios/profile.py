@@ -1,5 +1,5 @@
 """Cisco IOS / IOS-XE / IOL (routers and switches)."""
-from .base import VendorProfile
+from ..base import VendorProfile
 
 PROFILE = VendorProfile(
     name="cisco_ios",

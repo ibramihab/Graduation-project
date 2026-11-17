@@ -1,14 +1,15 @@
 """A vendor PROFILE: everything the system needs to know about one kind of device.
 
-All vendor-specific details live in one file per vendor (cisco_ios.py, huawei.py...),
-and every layer reads them from there:
-    intent      -> ai_hints (rules + examples for the AI), wrapper_lines (lines to clean)
-    validation  -> blocked, warn, check_commands
-    drivers     -> netmiko_type, show_config, show_interfaces, parse_interfaces,
-                   error_markers, neighbors
+Each vendor has ONE folder with everything about it (ibn/vendors/cisco_ios/, huawei/...):
+    profile.py      the PROFILE below; every layer reads it:
+        intent      -> ai_hints (rules + examples for the AI), wrapper_lines (lines to clean)
+        validation  -> blocked, warn, check_commands
+        drivers     -> netmiko_type, show_config, show_interfaces, parse_interfaces,
+                       error_markers, neighbors
+    examples.json   (optional) solved requests: the AI's knowledge for RAG (ibn/intent/rag/)
 
-To add a vendor: copy one of the files in this folder, change the values, and add it
-to the list in vendors/__init__.py. Nothing else in the project needs to change.
+To add a vendor: copy a vendor folder, change the values in profile.py, and add it to the
+list in vendors/__init__.py. Nothing else in the project needs to change.
 """
 from collections.abc import Callable
 from dataclasses import dataclass, field

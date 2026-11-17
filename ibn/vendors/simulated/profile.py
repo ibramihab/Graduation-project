@@ -1,7 +1,7 @@
 """A fake device for practice and tests. It behaves like Cisco IOS (same rules)."""
 from dataclasses import replace
 
-from .cisco_ios import PROFILE as IOS
+from ..cisco_ios import PROFILE as IOS
 
 PROFILE = replace(
     IOS,

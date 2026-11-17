@@ -212,9 +212,9 @@ tried, but a local AI on a laptop was too slow for it). A new driver can add the
 ## 6. How to grow it (where each upgrade goes)
 
 ### Add a new CLI vendor (e.g. Juniper, HP, Palo Alto)
-1. Copy a file in `ibn/vendors/` (e.g. `huawei.py`) and change the values: its Netmiko
+1. Copy a vendor folder in `ibn/vendors/` (e.g. `huawei/`) and change `profile.py`: its Netmiko
    type ([list](https://github.com/ktbyers/netmiko/blob/develop/PLATFORMS.md)), commands,
-   dangerous commands, and a few examples for the AI.
+   dangerous commands and rules for the AI. Optionally add `examples.json` (RAG knowledge).
 2. Add it to the list in `ibn/vendors/__init__.py`.
 
 That's all: the driver, the validation and the web drop-down pick it up automatically.

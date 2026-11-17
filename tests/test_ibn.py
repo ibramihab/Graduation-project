@@ -506,7 +506,7 @@ def test_every_knowledge_example_passes_validation(tmp_path):
     from ibn.intent.rag.sources import SOURCES
     import json
     kb = FileGraph(str(tmp_path / "kb.json"))
-    examples = json.loads(open("knowledge/cisco_ios/examples.json", encoding="utf-8").read())
+    examples = json.loads(open("ibn/vendors/cisco_ios/examples.json", encoding="utf-8").read())
     for name in {c["device"] for e in examples for c in e["plan"]["changes"]}:
         kb.add_device({"name": name, "ip": "10.9.9.9", "vendor": "cisco_ios", "state": "up"})
     for e in examples:

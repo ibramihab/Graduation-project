@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### One folder per vendor: its rules and its AI knowledge together
+- 🟡 `ibn/vendors/cisco_ios.py` -> `ibn/vendors/cisco_ios/profile.py` (same for every vendor, content unchanged).
+  Imports are unchanged (`from ibn.vendors import get_vendor`).
+- 🟡 The RAG examples moved from `knowledge/cisco_ios/` to `ibn/vendors/cisco_ios/examples.json`;
+  🔴 the `knowledge/` folder is gone (its README is now `ibn/vendors/README.md`).
+
 ### RAG, first version: the closest solved examples go into the AI's prompt
 - 🟢 `ibn/intent/rag/` (Intent layer): `sources.py` (where knowledge comes from: examples now, more later),
   `embedder.py` (bge-m3 via Ollama, or shared words if it's not available), `index.py` (numbers saved once in

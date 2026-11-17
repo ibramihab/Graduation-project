@@ -1,6 +1,7 @@
-"""Vendor profiles: one file per vendor with everything specific to it.
+"""Vendor profiles: one folder per vendor with everything specific to it
+(profile.py = its rules, examples.json = its AI knowledge; see base.py).
 
-To add a vendor: create its file (copy a similar one) and add it to the list below.
+To add a vendor: copy a similar folder, change it, and add it to the list below.
 The order of the list is the order of the vendor drop-down on the web page.
 """
 from . import arista_eos, cisco_ios, cisco_nxos, fortigate, huawei, mikrotik_routeros, simulated

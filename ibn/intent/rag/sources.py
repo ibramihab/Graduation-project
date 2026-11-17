@@ -3,22 +3,22 @@
 
 To add a source (e.g. command notes or Cisco doc chunks): write a class with a name, a title
 and chunks(vendor), and add it to SOURCES at the bottom. Nothing else changes.
-The files live in knowledge/<vendor>/, one folder per vendor.
+The files live in each vendor's own folder: ibn/vendors/<vendor>/ (next to its profile.py).
 """
 import json
 from pathlib import Path
 
-KNOWLEDGE_DIR = Path(__file__).resolve().parents[3] / "knowledge"
+VENDORS_DIR = Path(__file__).resolve().parents[2] / "vendors"
 # A vendor that uses another vendor's knowledge (the simulated device acts like Cisco IOS).
 SAME_KNOWLEDGE_AS = {"simulated": "cisco_ios"}
 
 
 def vendor_folder(vendor: str) -> Path:
-    return KNOWLEDGE_DIR / SAME_KNOWLEDGE_AS.get(vendor, vendor)
+    return VENDORS_DIR / SAME_KNOWLEDGE_AS.get(vendor, vendor)
 
 
 class ExamplesSource:
-    """Solved requests: knowledge/<vendor>/examples.json -> found by the request text."""
+    """Solved requests: ibn/vendors/<vendor>/examples.json -> found by the request text."""
     name = "examples"
     title = "Similar requests that were solved correctly"
 

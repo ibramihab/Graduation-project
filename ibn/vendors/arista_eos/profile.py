@@ -1,7 +1,7 @@
 """Arista EOS switches. Very close to Cisco IOS syntax."""
 from dataclasses import replace
 
-from .cisco_ios import PROFILE as IOS
+from ..cisco_ios import PROFILE as IOS
 
 PROFILE = replace(
     IOS,

@@ -1,7 +1,7 @@
 """Fortinet FortiGate firewalls (FortiOS)."""
 import re
 
-from .base import VendorProfile
+from ..base import VendorProfile
 
 
 def fortigate_interfaces(output: str) -> list[str]:
