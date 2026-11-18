@@ -24,6 +24,10 @@ The AI can make mistakes, so we never trust it blindly. Checks:
  10b. the same for the "door" to the lab: an interface whose subnet holds this PC's own IP
      (e.g. R2 e0/3 192.168.43.2/24 while the PC is 192.168.43.1). Every device is reached
      through it, so cutting it cuts the program off from ALL of them
+ 15. IP conflicts, with the IPs the knowledge base knows (from "Find links & IPs" or typed):
+     the same IP on two devices or two interfaces, a device's management IP reused, and two
+     interfaces of ONE device in overlapping subnets (a real Cisco refuses that with
+     "% ... overlaps with ..."). Moving an IP inside the same plan ("no ip address" first) is fine
  14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
      or a network/broadcast address given to an interface) is refused in OUR words, whatever
      the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
@@ -157,6 +161,7 @@ def validate(plan: dict, kb) -> dict:
 
     if plan.get("changes"):
         errors += _changed_values_errors(plan, kb)
+        errors += _ip_conflict_errors(plan, kb)
 
     # The user's own request is wrong: say so ourselves (a small AI may "fix" it with a value of its own).
     problems = request_problems(plan.get("intent", ""))
@@ -217,6 +222,100 @@ def _changed_value(what: str, asked: str, instead: list[str]) -> str:
     used = f" (it uses {', '.join(instead)} instead)" if instead else ""
     return (f"You asked for {what} {asked}, but the plan doesn't use it{used}. The AI must not change "
             f"your values: if {asked} can't be used, the plan must have no changes and say why.")
+
+
+def _ip_conflict_errors(plan: dict, kb) -> list[str]:
+    """Same IP twice, or overlapping subnets on one device. Works with what real devices give us:
+    interfaces with a mask (Cisco: "Ethernet0/0 10.1.2.1/24") or without (other vendors)."""
+    known = _known_ips(kb)  # [(device, interface or None, ip, prefix or None)]
+    errors = []
+    for change in plan["changes"]:
+        if change.get("type") == "check":
+            continue
+        device = change.get("device")
+        added, removed = _ips_in_commands(change.get("commands", []))
+
+        def on_same_interface(entry, interface):
+            return entry[0] == device and entry[1] and _same_interface(interface, entry[1])
+
+        # "no ip address" on an interface frees its IP (moving an IP in one plan is fine)
+        known = [k for k in known if not any(r and on_same_interface(k, r) for r in removed)]
+        for interface, ip, prefix, secondary in added:
+            try:
+                ipaddress.IPv4Address(ip)
+            except ValueError:
+                continue  # an invalid IP: the IP check already reports it
+            for other_device, other_interface, other_ip, other_prefix in known:
+                entry = (other_device, other_interface, other_ip, other_prefix)
+                if on_same_interface(entry, interface):
+                    continue  # setting the same interface again
+                if other_ip == ip and (other_interface or other_device != device):
+                    where = f"{other_device} {other_interface}" if other_interface \
+                        else f"{other_device} (its management IP)"
+                    errors.append(f"{device}: {ip} is already used on {where}")
+                elif (other_device == device and other_interface and prefix is not None
+                      and other_prefix is not None
+                      and ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False).overlaps(
+                          ipaddress.IPv4Network(f"{other_ip}/{other_prefix}", strict=False))):
+                    errors.append(f"{device}: {ip}/{prefix} on {interface} overlaps with {other_interface} "
+                                  f"({other_ip}/{other_prefix}): the device would refuse it")
+            if not secondary:  # a new primary IP replaces the interface's old one
+                known = [k for k in known if not on_same_interface(k, interface)]
+            known.append((device, interface, ip, prefix))
+    return errors
+
+
+def _known_ips(kb) -> list[tuple]:
+    """Every IP the network already has: interface IPs, and management IPs not on a known interface."""
+    known = []
+    for device in kb.list_devices():
+        on_interfaces = set()
+        for line in device.get("interfaces") or []:
+            parts = line.split()
+            if len(parts) < 2 or not re.match(r"\d+\.\d+\.\d+\.\d+(/\d+)?$", parts[1]):
+                continue  # "unassigned", or no IP
+            ip, _, prefix = parts[1].partition("/")
+            if ip != "0.0.0.0":
+                known.append((device["name"], parts[0], ip, int(prefix) if prefix else None))
+                on_interfaces.add(ip)
+        management = (device.get("ip") or "").strip()
+        if management and management not in on_interfaces:
+            known.append((device["name"], None, management, None))
+    return known
+
+
+def _ips_in_commands(commands: list[str]) -> tuple[list[tuple], list[str]]:
+    """The IPs the commands give to interfaces, and the interfaces whose IP they remove.
+    Cisco / Arista / Huawei:  "interface Ethernet0/1" + "ip address 10.1.1.1 255.255.255.0"
+    FortiGate:                'edit "port1"' + "set ip 10.1.1.1 255.255.255.0"
+    MikroTik:                 "/ip address add address=10.1.1.1/24 interface=ether1"  """
+    added, removed, interface = [], [], None
+    for command in commands:
+        line = command.strip()
+        lower = line.lower()
+        opened = re.match(r"int(?:erface)?\s+(\S.*)$", line, re.IGNORECASE) or \
+            re.match(r'edit\s+"?([^"\s]+)"?', line, re.IGNORECASE)
+        if opened:
+            interface = opened[1].replace(" ", "")
+            continue
+        mikrotik = re.search(r"address=(\d[\d.]*)(?:/(\d+))?.*\binterface=(\S+)", line, re.IGNORECASE)
+        if mikrotik:
+            added.append((mikrotik[3], mikrotik[1], int(mikrotik[2]) if mikrotik[2] else None, False))
+        elif re.match(r"(no|undo) ip address|unset ip\b", lower):
+            removed.append(interface)
+        elif interface and not lower.startswith("ip address dhcp"):
+            found = IP_ADDRESS.match(line)
+            if found:
+                added.append((interface, found[1], _prefix(found[2] or found[3]), "secondary" in lower))
+    return added, removed
+
+
+def _prefix(mask: str | None) -> int | None:
+    """ "255.255.255.0" or "24" -> 24. None if there is no mask or it's broken."""
+    try:
+        return ipaddress.IPv4Network(f"0.0.0.0/{mask}").prefixlen if mask else None
+    except ValueError:
+        return None
 
 
 def _ip_problem(command: str) -> str | None:

@@ -276,6 +276,43 @@ def test_the_door_to_the_lab_warns(kb, monkeypatch):
     assert "EVERY device" not in warnings(["interface Ethernet0/3", "description to PC"])
 
 
+def test_ip_conflicts_are_refused(kb):
+    # As "Find links & IPs" saves them from real devices (Cisco with masks)
+    kb.update_device("R1", interfaces=["Loopback0 10.0.0.1/32", "Ethernet0/0 10.0.12.1/24",
+                                       "Ethernet0/1 unassigned"])
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.1.11/24"])
+
+    def errors(*changes):
+        return " ".join(validate({"changes": list(changes)}, kb)["errors"])
+
+    def set_ip(device, interface, ip_line, rollback=("no ip address",)):
+        return change(device, [f"interface {interface}", ip_line], [f"interface {interface}", *rollback])
+
+    # Same IP on another device, and another device's management IP (SW1 is reached on 10.0.0.2)
+    assert "10.0.12.1 is already used on R1 Ethernet0/0" in errors(
+        set_ip("SW1", "Vlan2", "ip address 10.0.12.1 255.255.255.0"))
+    assert "10.0.0.2 is already used on SW1 (its management IP)" in errors(
+        set_ip("R1", "e0/1", "ip address 10.0.0.2 255.255.255.0"))
+    # Same IP on two interfaces of one device; overlapping subnets on one device (Cisco refuses it)
+    assert "already used on R1 Ethernet0/0" in errors(set_ip("R1", "e0/1", "ip address 10.0.12.1 255.255.255.0"))
+    assert "overlaps with Ethernet0/0 (10.0.12.1/24)" in errors(set_ip("R1", "e0/1", "ip address 10.0.12.200 255.255.255.0"))
+    # Two devices given the same new IP in one plan
+    assert "10.5.5.5 is already used on R1" in errors(set_ip("R1", "e0/1", "ip address 10.5.5.5 255.255.255.0"),
+                                                     set_ip("SW1", "Vlan5", "ip address 10.5.5.5 255.255.255.0"))
+    # Other vendors' syntax: Huawei "24", FortiGate "set ip"
+    assert "already used" in errors(set_ip("SW1", "Vlanif5", "ip address 10.0.12.1 24"))
+    assert "already used" in errors(change("SW1", ['edit "port1"', "set ip 10.0.12.1 255.255.255.0"], ["unset ip"]))
+
+    # Fine: same interface again, a new free IP, a different subnet, a /31, and MOVING an IP in one plan
+    for ok in ([set_ip("R1", "Ethernet0/0", "ip address 10.0.12.1 255.255.255.0")],
+               [set_ip("R1", "e0/0", "ip address 10.0.12.9 255.255.255.0")],
+               [set_ip("R1", "e0/1", "ip address 10.0.13.1 255.255.255.0")],
+               [set_ip("R1", "e0/1", "ip address 10.0.99.0 255.255.255.254")],
+               [change("R1", ["interface Ethernet0/0", "no ip address"], ["interface Ethernet0/0", "ip address 10.0.12.1 255.255.255.0"]),
+                set_ip("SW1", "Vlan2", "ip address 10.0.12.1 255.255.255.0")]):
+        assert errors(*ok) == "", ok
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

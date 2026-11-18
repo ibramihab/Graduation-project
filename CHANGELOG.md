@@ -7,6 +7,15 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Validation refuses IP conflicts
+- 🟢 `validation/validator.py`: compared with the IPs the knowledge base knows (from "Find links & IPs" or typed
+  by hand), a plan is refused if it gives an IP that's already on another device or interface, reuses another
+  device's management IP, gives the same new IP to two devices, or puts two interfaces of ONE device in
+  overlapping subnets (a real Cisco refuses that: "% ... overlaps with ..."). Moving an IP in one plan
+  (`no ip address` first) is fine. Reads Cisco/Arista/Huawei (`ip address`), FortiGate (`edit` + `set ip`) and
+  MikroTik (`address=... interface=...`); works with interfaces saved with or without a mask.
+  Test: `test_ip_conflicts_are_refused`.
+
 ### Ready for real Cisco devices (EVE-NG): masks saved, and the lab's "door" is protected
 - 🟡 `vendors/cisco_ios.py` (Infrastructure): "Find links & IPs" now reads `show ip interface` instead of
   `show ip interface brief`, so Cisco interfaces are saved WITH their mask (`Ethernet0/0 10.1.2.1/24`). The
