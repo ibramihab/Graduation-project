@@ -29,6 +29,7 @@ def rag_for_tests(tmp_path, monkeypatch):
     from ibn.intent.rag import index
     monkeypatch.setattr(settings, "RAG_SEARCH", "keyword")
     monkeypatch.setattr(index, "INDEX_FILE", str(tmp_path / "rag_index.json"))
+    monkeypatch.setattr(settings, "PLAN_LOG", str(tmp_path / "plans.csv"))
 
 
 # A small test network in a temporary JSON file: R1 - SW1 (both simulated).
@@ -576,3 +577,70 @@ def test_rag_vendor_docs_are_cut_into_pieces_and_searched(monkeypatch, tmp_path)
     assert text.startswith("Relevant parts of the vendor documentation") and "[routing]" in text
     assert "no ip route" in text and "router ospf" not in text
     assert retrieve("static route", ["huawei"]) == ""  # no docs folder: nothing, no error
+
+
+# ---- results: every plan saved to a CSV + the AI test command (evaluation/) ----
+def test_every_plan_is_saved_in_the_plan_log(kb, tmp_path, monkeypatch):
+    import csv
+    from ibn import settings
+    llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["vlan 10"], ["no vlan 10"])]})
+    pipeline.propose("create vlan 10 on SW1", kb, llm)
+    pipeline.propose("اعمل فيلان 10", kb, llm)
+    rows = list(csv.DictReader(open(settings.PLAN_LOG, encoding="utf-8-sig")))
+    assert [r["request"] for r in rows] == ["create vlan 10 on SW1", "اعمل فيلان 10"]
+    assert rows[0]["commands"] == "SW1 (config): vlan 10" and rows[0]["validation"] == "ok"
+    assert rows[0]["rag"] == "on" and rows[0]["seconds"] != ""
+    monkeypatch.setattr(settings, "PLAN_LOG", "")  # empty = don't save
+    pipeline.propose("create vlan 11 on SW1", kb, llm)
+    assert len(list(csv.DictReader(open(tmp_path / "plans.csv", encoding="utf-8-sig")))) == 2
+
+
+def load_evaluation():
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("run_tests", "evaluation/run_tests.py")
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def test_the_evaluation_tests_fit_the_test_lab():
+    evaluation = load_evaluation()
+    names = {d["name"] for d in evaluation.load_lab().list_devices()}
+    tests = evaluation.load_tests()
+    assert len({t["id"] for t in tests}) == len(tests) >= 15
+    for t in tests:
+        assert t["kind"] in ("config", "check", "refuse"), t["id"]
+        assert set(t.get("must", {})) <= names | {"*"}, t["id"]
+
+
+def test_the_evaluation_scores_plans():
+    evaluation = load_evaluation()
+    test = {"id": "x", "request": "route", "kind": "config",
+            "must": {"R2": ["ip route 172.31.3.0 255.255.255.0 10.1.12.1"]}, "must_not": ["area"]}
+    good = {"changes": [change("R2", ["ip  Route 172.31.3.0 255.255.255.0 10.1.12.1"], ["no ip route ..."])],
+            "validation": {"ok": True}}
+    assert evaluation.score(test, good) == ("PASS", [])
+    no_undo = {"changes": [change("R2", ["ip route 172.31.3.0 255.255.255.0 10.1.12.1"], [])], "validation": {"ok": True}}
+    assert evaluation.score(test, no_undo)[0] == "HALF"
+    wrong = {"changes": [change("R1", ["ip route 172.31.3.0 255.255.255.0 10.1.12.1"], ["x"])], "validation": {"ok": True}}
+    assert evaluation.score(test, wrong) == ("FAIL", ["R2 is not in the plan"])
+    refuse = {"id": "y", "request": "reload R2", "kind": "refuse"}
+    assert evaluation.score(refuse, {"changes": [], "validation": {"ok": False}})[0] == "PASS"
+    assert evaluation.score(refuse, good)[0] == "FAIL"
+
+
+def test_the_evaluation_runs_and_saves_a_results_file(tmp_path, monkeypatch):
+    import csv
+    from ibn import settings
+    monkeypatch.setattr(settings, "RAG_ENABLED", True)  # run() changes it; pytest puts it back afterwards
+    evaluation = load_evaluation()
+    tests = [t for t in evaluation.load_tests() if t["id"] in ("route-1", "refuse-reload")]
+    llm = FakeLLM({"summary": "route", "changes": [
+        change("R2", ["ip route 172.31.3.0 255.255.255.0 10.1.12.1"], ["no ip route 172.31.3.0 255.255.255.0 10.1.12.1"])]})
+    rows = evaluation.run(tests, llm, [False, True], show=lambda *a: None)
+    assert [(r["rag"], r["id"], r["mark"]) for r in rows] == [
+        ("off", "route-1", "PASS"), ("off", "refuse-reload", "FAIL"),  # the fake AI never refuses
+        ("on", "route-1", "PASS"), ("on", "refuse-reload", "FAIL")]
+    assert "RAG off: 1/2 PASS" in evaluation.summary(rows)
+    path = evaluation.save(rows, folder=str(tmp_path))
+    assert len(list(csv.DictReader(open(path, encoding="utf-8-sig")))) == 4

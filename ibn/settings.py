@@ -34,3 +34,6 @@ DEVICE_SECRET = os.getenv("DEVICE_SECRET", "")  # Cisco "enable" password
 
 # true = do everything except really sending config to devices
 DRY_RUN = os.getenv("DRY_RUN", "false").lower() == "true"
+
+# Every plan the AI makes is saved as one row in this CSV file (opens in Excel). Empty = don't save.
+PLAN_LOG = os.getenv("PLAN_LOG", "data/plans.csv")

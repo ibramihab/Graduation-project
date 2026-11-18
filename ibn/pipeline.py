@@ -5,10 +5,11 @@
 The web page only calls these two functions, so a different interface
 (a chat bot, a command line tool, ...) can reuse them without changes.
 """
+import time
 import uuid
 
 from .control import apply_plan
-from .intent import translate
+from .intent import plan_log, translate
 from .validation import validate
 
 PENDING: dict[str, dict] = {}  # plans waiting for the user to approve them
@@ -18,6 +19,7 @@ ATTEMPTS = 2  # if validation finds mistakes, the AI gets one more try to fix th
 def propose(text: str, kb, llm) -> dict:
     """Steps 1-3: understand the request and check it. Nothing is changed yet."""
     request = text
+    started = time.time()
     for attempt in range(1, ATTEMPTS + 1):
         plan = translate(request, kb.list_devices(), llm, kb.list_links())
         plan["validation"] = validate(plan, kb)
@@ -29,6 +31,8 @@ def propose(text: str, kb, llm) -> dict:
     plan["intent"] = text
     plan["attempts"] = attempt
     plan["id"] = uuid.uuid4().hex[:8]
+    plan["seconds"] = round(time.time() - started, 1)
+    plan_log.save(plan)  # keep every plan in data/plans.csv (for comparing models and RAG)
     if plan["validation"]["ok"]:
         PENDING[plan["id"]] = plan
     return plan

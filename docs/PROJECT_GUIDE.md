@@ -110,6 +110,7 @@ Graduation-project/
 ├── CHANGELOG.md                   [SUPPORT]  list of every change, newest first
 ├── docs/PROJECT_GUIDE.md          [SUPPORT]  this guide
 ├── lab/VPN_lab_config_...txt      [SUPPORT]  the Cisco configs for your EVE-NG lab (notes, not code)
+├── evaluation/                    [SUPPORT]  AI tests: run_tests.py, tests.json, lab.json (scores the plans)
 ├── .gitignore                     [SUPPORT]  tells Git which files never to upload
 ├── .gitattributes                 [SUPPORT]  keeps .bat files in Windows format
 ├── .vscode/settings.json          [SUPPORT]  hides the [AUTO] folders in VS Code
@@ -127,7 +128,8 @@ Graduation-project/
 │   ├── intent/                    LAYER 2
 │   │   ├── llm.py                 [CORE]     talks to the AI (Claude or Ollama)
 │   │   ├── translator.py          [CORE]     instructions + examples for the AI, the plan shape
-│   │   └── rag/                   [OPTIONAL] RAG: sources.py, embedder.py, index.py, retriever.py
+│   │   ├── rag/                   [OPTIONAL] RAG: sources.py, embedder.py, index.py, retriever.py
+│   │   └── plan_log.py            [SUPPORT]  saves every plan in data/plans.csv
 │   │
 │   ├── validation/                LAYER 3
 │   │   └── validator.py           [CORE]     the safety checks

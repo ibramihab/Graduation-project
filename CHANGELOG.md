@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Results are kept: plan log + automatic AI tests
+- 🟢 `ibn/intent/plan_log.py`: every plan is saved as one row in `data/plans.csv` (time, model, RAG on/off, request,
+  commands, validation, seconds). Setting `PLAN_LOG` (empty = off). `pipeline.py`: 3 lines (time + save);
+  the plan also gets a `seconds` field.
+- 🟢 `evaluation/`: `run_tests.py` scores the AI on 16 requests (`tests.json`) in a fixed test network (`lab.json`),
+  RAG off and on: PASS / HALF / FAIL, average time, results in `data/evaluation/*.csv`.
+
 ### 48 Cisco examples for the RAG
 - 🟢 `ibn/vendors/cisco_ios/examples.json`: 48 solved requests (was 5): static routes, OSPF, ACLs, VLANs/trunks,
   router-on-a-stick, interfaces, DHCP, NAT, show/ping checks, Arabic, and 3 requests that must be refused.

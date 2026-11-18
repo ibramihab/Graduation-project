@@ -8,7 +8,7 @@ This is a 4-person graduation project: a small, layered **Intent-Based Networkin
 | Layer | Folder |
 |---|---|
 | 1 Interface | `ibn/interface/` (web.py, templates/index.html) |
-| 2 Intent (AI) | `ibn/intent/` (incl. `rag/`) + the AI parts of each vendor folder: `ai_hints` in `ibn/vendors/<vendor>/profile.py`, `examples.json`, `docs/` |
+| 2 Intent (AI) | `ibn/intent/` (incl. `rag/`) + `evaluation/` (AI tests) + the AI parts of each vendor folder: `ai_hints` in `ibn/vendors/<vendor>/profile.py`, `examples.json`, `docs/` |
 | 3 Validation | `ibn/validation/` |
 | 4 Control | `ibn/control/` |
 | 5 Infrastructure | `ibn/infrastructure/` (drivers, discovery) + `ibn/vendors/` |
