@@ -407,6 +407,24 @@ def test_changing_a_device_the_user_didnt_name_warns(kb):
     assert "you didn't name R1" in warnings("Create VLAN 20 on sw1 (not on R10)", vlan_sw1, subif_r1)
 
 
+def test_switch_commands_on_a_router_are_refused(kb):
+    def errors(device, commands):
+        return " ".join(validate({"changes": [change(device, commands, ["x"])]}, kb)["errors"])
+
+    # The AI's real mistake: a trunk on router R2's Ethernet port
+    kb.add_device({"name": "R2", "ip": "10.0.0.3", "vendor": "simulated", "state": "up"})
+    assert "'switchport mode trunk' is a switch command, but R2 is a router" in errors(
+        "R2", ["interface Ethernet0/0", "switchport mode trunk", "switchport trunk allowed vlan add 10"])
+    for command in ("vlan 10", "spanning-tree vlan 1 priority 4096", "interface Vlan10"):
+        assert "is a switch command" in errors("R1", [command]), command
+    # Fine: router commands on a router, switch commands on a switch, and a router-like name
+    # that "Find links" showed to be a switch (it answered with its VLANs)
+    assert errors("R1", ["interface Ethernet0/0.10", "encapsulation dot1Q 10"]) == ""
+    assert errors("SW1", ["vlan 10", "interface Ethernet0/1", "switchport access vlan 10"]) == ""
+    kb.update_device("R2", vlans=["1 default"])
+    assert errors("R2", ["switchport mode trunk"]) == ""
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

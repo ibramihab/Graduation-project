@@ -39,6 +39,10 @@ The AI can make mistakes, so we never trust it blindly. Checks:
  18. devices the user didn't ask for (warning): if the request names devices and the plan
      CHANGES another one. Only device names are compared, so it works in any language.
      (Sometimes right: "make sw1 reach sw2" needs the routers in between. The user decides.)
+ 19. switch-only commands on a router (error): "switchport", "vlan 10", "spanning-tree",
+     "interface Vlan10". A real router answers "% Invalid input" and the plan fails halfway.
+     A router = named like one (R1, rtr-2, router3) and NOT a switch: a device whose VLANs
+     were read at "Find links" is a switch (a router answers no VLANs)
  14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
      or a network/broadcast address given to an interface) is refused in OUR words, whatever
      the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
@@ -159,6 +163,7 @@ def validate(plan: dict, kb) -> dict:
         # Would this change cut the program off from the device? (its management interface)
         warnings += _management_warnings(name, device, change.get("commands", []))
         warnings += _door_warnings(name, device, change.get("commands", []))
+        errors += _switch_command_errors(name, device, change.get("commands", []))
         warnings += _vlan_rename_warnings(name, device, change.get("commands", []), kb)
         errors += _management_rollback_errors(name, device, change)
 
@@ -286,6 +291,27 @@ def _vlan_names(commands: list[str], before: dict | None = None) -> dict[str, st
         elif not line.startswith((" ", "\t")):
             current = None  # another command: we left the VLAN's settings
     return result
+
+
+# ---- 19. switch-only commands on a router ----
+SWITCH_ONLY = re.compile(r"^\s*(switchport\b|vlan\s+\d|spanning-tree\b|interface\s+vlan\s*\d)", re.IGNORECASE)
+
+
+def is_router(device: dict) -> bool:
+    """Same guess as the web page (a word in the name: R1, rtr-2, router3; "HW-R1" too),
+    but a device that told us its VLANs at "Find links" is a switch, whatever its name."""
+    if device.get("vlans"):
+        return False
+    if device.get("vendor") == "mikrotik_routeros":
+        return True
+    return bool(re.search(r"(^|[-_ ])(r\d|rtr|router)", (device.get("name") or "").lower()))
+
+
+def _switch_command_errors(name: str, device: dict, commands: list[str]) -> list[str]:
+    if not is_router(device):
+        return []
+    return [f"{name}: '{command.strip()}' is a switch command, but {name} is a router: a real router "
+            "refuses it (% Invalid input)" for command in commands if SWITCH_ONLY.match(command)]
 
 
 # ---- 18. devices the user didn't ask for ----

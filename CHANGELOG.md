@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Switch commands on a router are refused
+- 🟢 `validation/validator.py`: `switchport ...`, `vlan 10`, `spanning-tree ...` or `interface Vlan10` on a router is
+  an error (a real router answers "% Invalid input", so the plan would fail halfway). A router = named like one
+  (R1, rtr-2, router3; same guess as the web page) and not a switch: a device whose VLANs were read at
+  "Find links" counts as a switch, whatever its name. The AI gets the error and a second try.
+  Test: `test_switch_commands_on_a_router_are_refused`.
+
 ### Warning when the plan changes a device the user didn't name
 - 🟢 `validation/validator.py`: if the request names devices (R1, sw1...) and the plan CHANGES another one, a
   warning: "R1: you didn't name R1 in your request, but the plan changes it". Only device names are compared,
