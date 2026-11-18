@@ -75,11 +75,16 @@ def test_validation_blocks_unknown_device(kb):
 
 
 def test_invalid_vlan_number_is_refused(kb):
-    for bad in (["vlan 5000", "name Test"], ["vlan 0"], ["interface e0/1", "switchport access vlan 4095"]):
+    for bad in (["vlan 5000", "name Test"], ["vlan 0"], ["interface e0/1", "switchport access vlan 4095"],
+                ["interface e0/1", "switchport trunk allowed vlan add 4095"],
+                ["interface e0/1", "switchport trunk allowed vlan 10,20-5000"],
+                ["vlan batch 10 to 5000"], ["interface e0/0.9", "encapsulation dot1Q 5000"]):
         plan = {"changes": [change("SW1", bad, ["no vlan 1"])]}
         result = validate(plan, kb)
         assert not result["ok"] and "invalid VLAN number" in result["errors"][0]
-    for good in (["vlan 1"], ["vlan 10", "name Sales"], ["vlan 4094"]):
+    for good in (["vlan 1"], ["vlan 10", "name Sales"], ["vlan 4094"],
+                 ["interface e0/1", "switchport trunk allowed vlan add 10,20-30"],
+                 ["spanning-tree vlan 10 priority 4096"]):
         assert validate({"changes": [change("SW1", good, ["no vlan 10"])]}, kb)["ok"]
 
 

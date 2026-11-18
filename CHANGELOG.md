@@ -11,6 +11,8 @@ Every change to the project is listed here, so nothing surprises you.
 - 🟢 `validation/validator.py`: a `vlan N` (also `switchport access vlan N`, FortiGate `set vlanid N`) with N
   outside 1-4094 is an error, so a plan like "Create VLAN 5000" is blocked before it reaches a device.
   Test: `test_invalid_vlan_number_is_refused`.
+- 🟡 The VLAN check also reads lists: `switchport trunk allowed vlan add 4095`, `allowed vlan 10,20-5000`,
+  Huawei `vlan batch 10 to 20`, and sub-interfaces `encapsulation dot1Q 5000`.
 
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices

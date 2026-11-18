@@ -35,8 +35,18 @@ PHYSICAL_INTERFACE = re.compile(
 # Short names that are not the start of the full name ("GE0/0/1" on Huawei).
 ALIASES = {"ge": "gigabitethernet"}
 
-# A VLAN number in a command: "vlan 10", "switchport access vlan 20", "set vlanid 30" (FortiGate).
-VLAN_NUMBER = re.compile(r"\bvlan(?:id)?\s+(\d+)", re.IGNORECASE)
+# VLAN numbers in a command. Examples it finds:
+#   "vlan 10"                              -> 10
+#   "switchport access vlan 20"            -> 20
+#   "switchport trunk allowed vlan add 30" -> 30   (also "remove" / "except")
+#   "switchport trunk allowed vlan 10,20-30" -> 10, 20, 30
+#   "vlan batch 10 to 20" (Huawei)         -> 10, 20
+#   "set vlanid 40" (FortiGate), "encapsulation dot1Q 50" (sub-interface)
+# It stops at the first word that is not part of the list, so
+# "spanning-tree vlan 10 priority 4096" only gives 10.
+VLAN_LIST = re.compile(
+    r"\b(?:vlan(?:id)?|dot1q)\s+(?:(?:add|remove|except|batch)\s+)?"
+    r"(\d+(?:\s*(?:,|-|\s|to)\s*\d+)*)", re.IGNORECASE)
 
 
 def validate(plan: dict, kb) -> dict:
@@ -77,7 +87,8 @@ def validate(plan: dict, kb) -> dict:
 
         # VLAN numbers must be 1-4094 (the AI may write "vlan 5000" without noticing).
         for command in change.get("commands", []):
-            for number in VLAN_NUMBER.findall(command):
+            numbers = [n for found in VLAN_LIST.findall(command) for n in re.findall(r"\d+", found)]
+            for number in numbers:
                 if not 1 <= int(number) <= 4094:
                     errors.append(f"{name}: '{command}' has an invalid VLAN number "
                                   f"{number} (must be 1-4094)")
