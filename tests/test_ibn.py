@@ -105,6 +105,9 @@ def test_change_on_the_management_interface_warns(kb):
     assert "management" not in warnings(["interface Vlan1", "description mgmt"])
     assert "management" not in warnings(["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"])
     assert "management" not in warnings(["interface Vlan1", "ip address 10.9.9.9 255.255.255.0 secondary"])
+    # The IP was typed with spaces around it on the web page: still the same device IP
+    kb.update_device("SW1", ip="   10.0.0.2 ")
+    assert "cuts the program's connection" in warnings(["interface Vlan1", "shutdown"])
 
 
 def test_check_steps_are_read_only(kb):

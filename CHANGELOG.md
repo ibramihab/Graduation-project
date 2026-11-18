@@ -12,6 +12,7 @@ Every change to the project is listed here, so nothing surprises you.
   device's known interfaces (e.g. `Vlan1 10.0.1.11/24`), a `shutdown`, `no ip address` or a new `ip address` on
   that interface now gets a warning: the program (and the rollback) would lose the device. Only a warning, the
   user may really want it. Test: `test_change_on_the_management_interface_warns`.
+- 🟡 Same check: an IP typed with spaces around it (`"   10.0.1.11"`) is still recognized.
 
 ### The AI no longer guesses when the request itself is wrong
 - 🟡 `pipeline.py` (shared file): when a plan is rejected, the second try now tells the AI to fix only its own

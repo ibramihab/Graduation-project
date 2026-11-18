@@ -132,7 +132,7 @@ def validate(plan: dict, kb) -> dict:
 def _management_warnings(name: str, device: dict, commands: list[str]) -> list[str]:
     """The program reaches the device on ONE IP (device["ip"]). If a command turns off or
     changes the interface that holds that IP, we lose the device and the rollback can't reach it."""
-    management_ip = device.get("ip", "")
+    management_ip = (device.get("ip") or "").strip()  # "  10.0.1.11" typed with spaces is the same IP
     # Which interface holds the management IP? Interfaces look like "Vlan1 10.0.1.11/24".
     interface = next((i.split()[0] for i in device.get("interfaces") or []
                       if len(i.split()) > 1 and i.split()[1].split("/")[0] == management_ip), None)
