@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Validation checks the rollback of a management-IP change
+- 🟢 `validation/validator.py`: the AI once "undid" a new management IP with `no interface Vlan1` (that would
+  leave the device with no way in). Now it's an error if a rollback deletes the management interface, or if a
+  plan changes the management IP and the rollback doesn't put the old IP back. The error tells the AI the right
+  rollback (`interface Vlan1` / `ip address 10.0.1.11 255.255.255.0`), so its second try can fix it.
+  Test: `test_rollback_must_not_cut_the_device_off`.
+
 ### The program follows a device to its new management IP
 - 🟢 `control/controller.py`: when an applied plan gives a device's management interface a new IP, the program
   saves the new IP (and the interface line, e.g. `Vlan1 10.0.1.50/24`) by itself. On a real device the SSH

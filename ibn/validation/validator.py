@@ -15,6 +15,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
   9. VLAN numbers in the commands are valid (1-4094)
  10. a change on the interface that holds the device's management IP (shutdown, new IP,
      no IP) gets a warning: it would cut the program's own connection to the device
+ 11. the rollback must not cut the device off either: it can't delete the management
+     interface, and if the plan changes the management IP, the rollback must put the old one back
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -117,6 +119,7 @@ def validate(plan: dict, kb) -> dict:
 
         # Would this change cut the program off from the device? (its management interface)
         warnings += _management_warnings(name, device, change.get("commands", []))
+        errors += _management_rollback_errors(name, device, change)
 
         # Interface names must exist on the device (if we know its interfaces).
         known = [i.split()[0] for i in device.get("interfaces") or []]
@@ -151,6 +154,42 @@ def _management_warnings(name: str, device: dict, commands: list[str]) -> list[s
                             "that the device answers on the new IP and then uses it; if it doesn't "
                             "answer, the change is reported as failed.")
     return warnings
+
+
+def _management_rollback_errors(name: str, device: dict, change: dict) -> list[str]:
+    """A wrong rollback can be worse than the change: the AI once "undid" a new management IP
+    with 'no interface Vlan1', which would leave the device with no way in at all."""
+    interface = management_interface(device)
+    if not interface:
+        return []
+    rollback = change.get("rollback", [])
+    errors = []
+
+    # 1. The rollback must never delete the management interface.
+    for command in rollback:
+        deleted = re.match(r"(?:no|undo)\s+int(?:erface)?\s+(.+)", command.strip().lower())
+        if deleted and _same_interface(deleted[1], interface):
+            errors.append(f"{name}: the rollback '{command}' deletes {interface}, the interface the "
+                          "program uses to reach the device")
+
+    # 2. If the plan gives the management interface a new IP, the rollback must put the old one back.
+    if new_management_ip(device, change.get("commands", [])):
+        old_ip = (device.get("ip") or "").strip()
+        restored = any(re.match(rf"ip address\s+{re.escape(old_ip)}\s", line + " ")
+                       for _, line in _management_lines(rollback, interface))
+        if not restored:
+            errors.append(f"{name}: the rollback must put the management IP back: "
+                          f"'interface {interface}' then 'ip address {old_ip} {_old_mask(device, interface)}'")
+    return errors
+
+
+def _old_mask(device: dict, interface: str) -> str:
+    """The management interface's mask as "255.255.255.0", from its saved line "Vlan1 10.0.1.11/24"."""
+    for line in device.get("interfaces") or []:
+        parts = line.split()
+        if parts[0] == interface and "/" in parts[-1]:
+            return str(ipaddress.IPv4Network(f"0.0.0.0/{parts[-1].split('/')[1]}").netmask)
+    return "<mask>"
 
 
 def management_interface(device: dict) -> str | None:

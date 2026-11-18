@@ -93,7 +93,9 @@ def test_change_on_the_management_interface_warns(kb):
     kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
 
     def warnings(commands):
-        result = validate({"changes": [change("SW1", commands, ["no shutdown"])]}, kb)
+        # a correct rollback (puts the management IP back), so only the warnings are tested here
+        rollback = ["interface Vlan1", "no shutdown", "ip address 10.0.0.2 255.255.255.0"]
+        result = validate({"changes": [change("SW1", commands, rollback)]}, kb)
         assert result["ok"]  # a warning, not an error: the user may really want it
         return " ".join(result["warnings"])
 
@@ -108,6 +110,25 @@ def test_change_on_the_management_interface_warns(kb):
     # The IP was typed with spaces around it on the web page: still the same device IP
     kb.update_device("SW1", ip="   10.0.0.2 ")
     assert "cuts the program's connection" in warnings(["interface Vlan1", "shutdown"])
+
+
+def test_rollback_must_not_cut_the_device_off(kb):
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+    move = ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"]
+
+    def errors(commands, rollback):
+        return " ".join(validate({"changes": [change("SW1", commands, rollback)]}, kb)["errors"])
+
+    # The real mistake the AI made: "undo" the new IP by deleting the whole interface
+    bad = errors(move, ["no interface Vlan1", "no ip address 10.0.0.50 255.255.255.0"])
+    assert "deletes Vlan1" in bad
+    assert "ip address 10.0.0.2 255.255.255.0" in bad  # it tells the AI the right rollback
+    # A rollback that forgets the old IP
+    assert "must put the management IP back" in errors(move, ["interface Vlan1", "no ip address"])
+    # Deleting the management interface is wrong in any rollback
+    assert "deletes Vlan1" in errors(["interface Vlan1", "description mgmt"], ["no interface vlan 1"])
+    # The right rollback passes
+    assert errors(move, ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]) == ""
 
 
 def test_check_steps_are_read_only(kb):
