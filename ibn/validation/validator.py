@@ -17,6 +17,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      no IP) gets a warning: it would cut the program's own connection to the device
  11. the rollback must not cut the device off either: it can't delete the management
      interface, and if the plan changes the management IP, the rollback must put the old one back
+ 12. IP addresses in the commands are valid: each part 0-255, a real mask, and not the
+     network or broadcast address of their subnet
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -52,6 +54,13 @@ ALIASES = {"ge": "gigabitethernet"}
 VLAN_LIST = re.compile(
     r"\b(?:vlan(?:id)?|dot1q)\s+(?:(?:add|remove|except|batch)\s+)?"
     r"(\d+(?:\s*(?:,|-|\s|to)\s*\d+)*)", re.IGNORECASE)
+
+# An IP address given to an interface. Examples it finds:
+#   "ip address 10.1.1.1 255.255.255.0"   (Cisco IOS, Huawei; Huawei may write "24" as the mask)
+#   "ip address 10.1.1.1/24"              (Arista, NX-OS)
+#   "set ip 10.1.1.1 255.255.255.0"       (FortiGate)
+# "no ip address ..." (removing an IP) and "ip address dhcp" are not checked.
+IP_ADDRESS = re.compile(r"^(?:ip address|set ip)\s+(\d[\d.]*)(?:/(\d+)|\s+(\d[\d.]*))?", re.IGNORECASE)
 
 
 def validate(plan: dict, kb) -> dict:
@@ -98,6 +107,12 @@ def validate(plan: dict, kb) -> dict:
                     errors.append(f"{name}: '{command}' has an invalid VLAN number "
                                   f"{number} (must be 1-4094)")
 
+        # IP addresses must be real ones (the AI may write 300.1.1.1 or a broken mask).
+        for command in change.get("commands", []):
+            problem = _ip_problem(command)
+            if problem:
+                errors.append(f"{name}: '{command}' {problem}")
+
         # Dangerous commands are blocked everywhere, even inside the rollback.
         for command in change.get("commands", []) + change.get("rollback", []):
             for pattern, reason in profile.blocked:
@@ -131,6 +146,33 @@ def validate(plan: dict, kb) -> dict:
                                       f"(it has: {', '.join(known)})")
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _ip_problem(command: str) -> str | None:
+    """What's wrong with the IP address in this command, or None if it is fine (or has no IP)."""
+    found = IP_ADDRESS.match(command.strip())
+    if not found:
+        return None
+    ip, mask = found[1], found[2] or found[3]
+    try:
+        address = ipaddress.IPv4Address(ip)
+    except ValueError:
+        return f"has an invalid IP address {ip} (4 numbers from 0 to 255)"
+    if not mask:
+        return None  # no mask written: nothing more to check
+    try:
+        subnet = ipaddress.IPv4Network(f"{ip}/{mask}", strict=False)
+    except ValueError:
+        return f"has an invalid mask {mask}"
+    # Python also accepts "0.0.0.255" (an ACL wildcard) as /24, but on an interface that's a mistake.
+    if "." in mask and str(subnet.netmask) != mask:
+        return f"has an invalid mask {mask} (did you mean {subnet.netmask}?)"
+    if subnet.prefixlen <= 30:  # /31 and /32 have no network or broadcast address
+        if address == subnet.network_address:
+            return f"uses {ip}, the network address of {subnet}: it can't be given to an interface"
+        if address == subnet.broadcast_address:
+            return f"uses {ip}, the broadcast address of {subnet}: it can't be given to an interface"
+    return None
 
 
 def _management_warnings(name: str, device: dict, commands: list[str]) -> list[str]:

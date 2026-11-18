@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Validation refuses invalid IP addresses
+- 🟢 `validation/validator.py`: `ip address` (and FortiGate `set ip`) must have a real IP (4 numbers 0-255), a
+  real mask (`255.0.255.0` and the ACL wildcard `0.0.0.255` are refused), and not the network or broadcast address
+  of its subnet (`10.1.1.0/24`, `10.1.1.255/24`). Masks can be `255.255.255.0`, `24` (Huawei) or `/24` (Arista).
+  Test: `test_invalid_ip_address_is_refused`.
+
 ### Validation checks the rollback of a management-IP change
 - 🟢 `validation/validator.py`: the AI once "undid" a new management IP with `no interface Vlan1` (that would
   leave the device with no way in). Now it's an error if a rollback deletes the management interface, or if a

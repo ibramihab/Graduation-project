@@ -131,6 +131,26 @@ def test_rollback_must_not_cut_the_device_off(kb):
     assert errors(move, ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]) == ""
 
 
+def test_invalid_ip_address_is_refused(kb):
+    def errors(command):
+        return " ".join(validate({"changes": [change("R1", ["interface Loopback5", command],
+                                                     ["no interface Loopback5"])]}, kb)["errors"])
+
+    assert "invalid IP address 300.1.1.1" in errors("ip address 300.1.1.1 255.255.255.255")
+    assert "invalid IP address 10.1.1" in errors("ip address 10.1.1 255.255.255.0")
+    assert "invalid mask 255.0.255.0" in errors("ip address 10.1.1.1 255.0.255.0")
+    assert "did you mean 255.255.255.0" in errors("ip address 10.1.1.1 0.0.0.255")  # an ACL wildcard
+    assert "invalid mask 33" in errors("ip address 10.1.1.1/33")
+    assert "network address" in errors("ip address 10.1.1.0 255.255.255.0")
+    assert "broadcast address" in errors("ip address 10.1.1.255 255.255.255.0")
+    # Good ones (Cisco, Huawei "24", Arista "/24", FortiGate, /31, /32, secondary, removing an IP)
+    for good in ("ip address 10.1.1.1 255.255.255.0", "ip address 10.1.1.1 24", "ip address 10.1.1.1/24",
+                 "set ip 10.1.1.1 255.255.255.0", "ip address 10.1.1.0 255.255.255.254",
+                 "ip address 5.5.5.5 255.255.255.255", "ip address 10.9.9.9 255.255.255.0 secondary",
+                 "no ip address 300.1.1.1 255.255.255.0", "ip address dhcp"):
+        assert errors(good) == "", good
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]
