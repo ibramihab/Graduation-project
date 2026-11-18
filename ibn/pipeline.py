@@ -20,7 +20,8 @@ NO_GUESSING = (
     "Fix only the mistakes YOU made (wrong command, wrong interface name...).\n"
     "If the problem is in the user's request itself (for example a number outside the "
     "allowed range), do NOT change or guess the user's values: return no changes, and in "
-    "\"summary\" say why it can't be done and what the allowed values are."
+    "\"summary\" say why it can't be done and the rule it breaks (for example \"VLANs must be "
+    "1-4094\"). Do NOT suggest a different value to use instead: the user decides that."
 )
 
 

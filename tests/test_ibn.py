@@ -251,6 +251,7 @@ def test_ai_is_told_not_to_guess_the_users_values(kb):
     llm = HonestLLM()
     plan = pipeline.propose("create vlan 5000 on SW1", kb, llm)
     assert "do NOT change or guess" in llm.requests[1]  # the rule was sent with the errors
+    assert "Do NOT suggest a different value" in llm.requests[1]  # no "use 10.1.1.1 instead"
     assert "1-4094" in llm.requests[1]                  # and the allowed range, so it can explain
     assert not plan["validation"]["ok"] and plan["id"] not in pipeline.PENDING  # nothing to approve
     assert "1-4094" in plan["summary"]

@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The AI says what's wrong, without suggesting another value
+- 🟡 `pipeline.py` (shared file): the second-try rule now says to explain why the request can't be done and the
+  rule it breaks, but NOT to suggest a replacement (it used to answer "the IP should be 10.1.1.1/24"). The user
+  decides the new value.
+
 ### The AI may not change the user's IP addresses
 - 🟢 `validation/validator.py`: every new IP address the user typed must appear in the plan's commands. The AI
   once turned "10.1.1.0/24" into `ip address 10.1.1.1` without saying so. Now that's an error, so the AI's second
