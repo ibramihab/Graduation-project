@@ -194,6 +194,39 @@ def test_wrong_ip_in_the_request_is_refused_in_our_words(kb):
     assert all(e.startswith("Your request:") for e in plan["validation"]["errors"])
 
 
+class AnswersInTurn:
+    """A fake AI that gives the next answer from a list each time it is asked."""
+    def __init__(self, *answers):
+        self.answers, self.requests = list(answers), []
+
+    def ask_json(self, system, user, schema):
+        self.requests.append(user)
+        return self.answers.pop(0)
+
+
+def test_refused_valid_ip_gets_a_second_try_and_our_words(kb):
+    request = "Set the IP of interface Ethernet0/1 on R1 to 10.0.12.0/31"
+    refusal = {"summary": "Impossible, use 10.0.12.1/31 or 10.0.12.2/31", "changes": []}
+    good = {"summary": "x", "changes": [change("R1", ["interface Ethernet0/1",
+            "ip address 10.0.12.0 255.255.255.254"], ["interface Ethernet0/1", "no ip address"])]}
+
+    # 1st answer: a refusal. We say the IP is valid and ask again; the 2nd answer is a good plan.
+    llm = AnswersInTurn(refusal, good)
+    plan = pipeline.propose(request, kb, llm)
+    assert plan["validation"]["ok"] and plan["attempts"] == 2
+    assert "10.0.12.0/31) were checked by the program and are valid" in llm.requests[1]
+
+    # Refused twice: its wrong reasons and its IPs are hidden, the message is ours.
+    plan = pipeline.propose(request, kb, AnswersInTurn(refusal, refusal))
+    assert not plan["validation"]["ok"] and plan["summary"].startswith("The AI couldn't make a plan")
+    assert "10.0.12.1" not in plan["summary"] and "10.0.12.1" not in " ".join(plan["validation"]["errors"])
+
+    # A request without IPs: the AI's own answer is kept, and it's not asked again
+    llm = AnswersInTurn({"summary": "Too vague: say what to change", "changes": []})
+    plan = pipeline.propose("Make the network faster", kb, llm)
+    assert plan["attempts"] == 1 and plan["summary"] == "Too vague: say what to change"
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

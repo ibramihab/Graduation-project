@@ -5,6 +5,7 @@
 The web page only calls these two functions, so a different interface
 (a chat bot, a command line tool, ...) can reuse them without changes.
 """
+import re
 import uuid
 
 from .control import apply_plan
@@ -25,6 +26,10 @@ NO_GUESSING = (
     "1-4094\"). Do NOT suggest a different value to use instead: the user decides that."
 )
 
+# Sent when the AI refused a request whose IP addresses we already checked: they are fine.
+VALID_IPS = ("The IP addresses in this request ({ips}) were checked by the program and are valid. "
+             "Make the plan with them exactly as written.")
+
 
 def propose(text: str, kb, llm) -> dict:
     """Steps 1-3: understand the request and check it. Nothing is changed yet."""
@@ -32,10 +37,17 @@ def propose(text: str, kb, llm) -> dict:
     for attempt in range(1, ATTEMPTS + 1):
         plan = translate(request, kb.list_devices(), llm, kb.list_links())
         plan["validation"] = validate(plan, kb)
-        # Stop when it passed, when the AI made no plan, or when the user's own request is wrong
+        # Stop when it passed, or when the user's own request is wrong
         # (asking the AI again can't fix the request, and a small AI would only guess a new value).
-        if plan["validation"]["ok"] or not plan["changes"] or request_problems(text):
+        if plan["validation"]["ok"] or request_problems(text):
             break
+        if not plan["changes"]:
+            # The AI made no plan. If the request has IPs we checked, they are valid: say so and ask
+            # again (a small AI refused 10.0.12.0/31 thinking it was wrong). Otherwise accept its answer.
+            if not typed_ips(text):
+                break
+            request = text + "\n\n" + VALID_IPS.format(ips=", ".join(typed_ips(text)))
+            continue
         # Tell the AI what was wrong and let it try again.
         request = (text + "\n\nYour previous plan was rejected by the safety checks:\n- "
                    + "\n- ".join(plan["validation"]["errors"]) + "\n" + NO_GUESSING)
@@ -45,10 +57,22 @@ def propose(text: str, kb, llm) -> dict:
     if problems:  # say it in our words, and hide the AI's plan: nothing it made up is shown
         plan["summary"] = "This can't be done. " + " ".join(problems)
         plan["changes"] = []
+    elif not plan["changes"] and typed_ips(text):
+        # The user's IPs are valid but the AI still made no plan: don't show its reasons
+        # (they were wrong, and it suggested other IPs). Say what happened in our words.
+        plan["summary"] = (f"The AI couldn't make a plan for this request. Your IP addresses "
+                           f"({', '.join(typed_ips(text))}) are valid. Nothing was changed.")
+        plan["validation"]["errors"] = [plan["summary"]]
     plan["id"] = uuid.uuid4().hex[:8]
     if plan["validation"]["ok"]:
         PENDING[plan["id"]] = plan
     return plan
+
+
+def typed_ips(text: str) -> list[str]:
+    """The IP addresses in the user's request, as typed: ["10.0.12.0/31"]. Masks are left out."""
+    found = re.findall(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){3}(?:/\d+)?)(?![\d.])", text)
+    return [ip for ip in dict.fromkeys(found) if not ip.startswith(("255.", "0."))]
 
 
 def approve(plan_id: str, kb) -> dict:

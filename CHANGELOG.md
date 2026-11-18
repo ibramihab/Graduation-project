@@ -7,6 +7,15 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### When the AI refuses a request with valid IPs
+- 🔴 Removed: the rules "keep the user's IP / the /31 rule" in the AI's instructions (`intent/translator.py`). The
+  small local AI ignored them.
+- 🟡 `pipeline.py` (shared file): if the request has IPs the program checked as valid and the AI made no plan,
+  it's asked once more ("these IPs are valid, make the plan with them exactly as written"). If it still makes no
+  plan, its reasons are hidden (they were wrong and suggested other IPs) and the message is ours: "The AI couldn't
+  make a plan for this request. Your IP addresses (...) are valid. Nothing was changed." Requests without IPs
+  (VLANs...) work as before. Test: `test_refused_valid_ip_gets_a_second_try_and_our_words`.
+
 ### A wrong IP in the request is refused in the program's own words
 - 🟢 `validation/validator.py`: `request_problems()` checks the IPs the user typed (300.1.1.1, 10.5.5, a broken
   mask, or a network/broadcast address given to an interface). If one is wrong, the errors are only
