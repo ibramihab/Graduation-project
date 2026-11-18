@@ -114,8 +114,7 @@ def simple_plan(text: str, devices: list[dict]) -> dict | None:
         undo = f"ip address {old_ip} {ipaddress.IPv4Network(f'0.0.0.0/{old_prefix}').netmask}"
     else:
         undo = "no ip address"
-    return {"summary": f"Set the IP of {interface} on {device['name']} to {ip}/{subnet.prefixlen} "
-                       "(written by the program, without the AI).",
+    return {"summary": f"Set the IP of {interface} on {device['name']} to {ip}/{subnet.prefixlen}",
             "changes": [{"device": device["name"], "type": "config",
                          "commands": [f"interface {interface}", f"ip address {ip} {mask}"],
                          "rollback": [f"interface {interface}", undo]}],
