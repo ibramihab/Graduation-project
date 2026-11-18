@@ -88,6 +88,25 @@ def test_invalid_vlan_number_is_refused(kb):
         assert validate({"changes": [change("SW1", good, ["no vlan 10"])]}, kb)["ok"]
 
 
+def test_change_on_the_management_interface_warns(kb):
+    # SW1 is reached on 10.0.0.2, which is on Vlan1
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+
+    def warnings(commands):
+        result = validate({"changes": [change("SW1", commands, ["no shutdown"])]}, kb)
+        assert result["ok"]  # a warning, not an error: the user may really want it
+        return " ".join(result["warnings"])
+
+    assert "cuts the program's connection" in warnings(["interface Vlan1", "shutdown"])
+    assert "cuts the program's connection" in warnings(["interface vlan 1", "no ip address"])
+    assert "changes the management IP" in warnings(["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"])
+    # Not the management interface, or nothing that cuts us off: no management warning
+    assert "management" not in warnings(["interface Ethernet0/1", "shutdown"])
+    assert "management" not in warnings(["interface Vlan1", "description mgmt"])
+    assert "management" not in warnings(["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"])
+    assert "management" not in warnings(["interface Vlan1", "ip address 10.9.9.9 255.255.255.0 secondary"])
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

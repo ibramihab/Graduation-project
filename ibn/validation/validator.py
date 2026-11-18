@@ -13,6 +13,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
   8. a risky change (shutdown, ACL...) on a device that is a single point of failure
      gets an extra warning saying which parts of the network would be cut off
   9. VLAN numbers in the commands are valid (1-4094)
+ 10. a change on the interface that holds the device's management IP (shutdown, new IP,
+     no IP) gets a warning: it would cut the program's own connection to the device
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -112,6 +114,9 @@ def validate(plan: dict, kb) -> dict:
                 warnings.append(f"{name} is a single point of failure: if this change breaks it, "
                                 "the network splits into " + "  |  ".join(", ".join(g) for g in groups))
 
+        # Would this change cut the program off from the device? (its management interface)
+        warnings += _management_warnings(name, device, change.get("commands", []))
+
         # Interface names must exist on the device (if we know its interfaces).
         known = [i.split()[0] for i in device.get("interfaces") or []]
         if known:
@@ -122,6 +127,47 @@ def validate(plan: dict, kb) -> dict:
                                       f"(it has: {', '.join(known)})")
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _management_warnings(name: str, device: dict, commands: list[str]) -> list[str]:
+    """The program reaches the device on ONE IP (device["ip"]). If a command turns off or
+    changes the interface that holds that IP, we lose the device and the rollback can't reach it."""
+    management_ip = device.get("ip", "")
+    # Which interface holds the management IP? Interfaces look like "Vlan1 10.0.1.11/24".
+    interface = next((i.split()[0] for i in device.get("interfaces") or []
+                      if len(i.split()) > 1 and i.split()[1].split("/")[0] == management_ip), None)
+    if not interface:
+        return []  # we don't know it (no interfaces saved, or the IP is not on any of them)
+
+    warnings, inside = [], False
+    for command in commands:
+        line = command.strip().lower()
+        opened = re.match(r"int(?:erface)?\s+(.+)", line)
+        if opened:  # "interface Vlan1": the next lines are settings of that interface
+            inside = _same_interface(opened[1], interface)
+            continue
+        if not inside:
+            continue
+        new_ip = re.match(r"ip address\s+(\S+)", line)
+        if re.match(r"shutdown$", line) or re.match(r"(no|undo) ip address", line):
+            warnings.append(f"{name}: '{command}' on {interface} cuts the program's connection "
+                            f"to {name} (its management IP {management_ip} is on that interface). "
+                            "The rollback won't be able to reach it.")
+        elif new_ip and new_ip[1] != management_ip and "secondary" not in line:
+            warnings.append(f"{name}: '{command}' changes the management IP of {name} "
+                            f"({management_ip} on {interface}): the program will lose the device. "
+                            f"If you apply it, change {name}'s IP with Edit right after.")
+    return warnings
+
+
+def _same_interface(written: str, real: str) -> bool:
+    """'vlan 1' is 'Vlan1', 'e0/0' is 'Ethernet0/0', 'gi0/1' is 'GigabitEthernet0/1'."""
+    a = re.match(r"([a-z-]+)\s*([\d/.]+)$", written.strip().lower())
+    b = re.match(r"([a-z-]+)\s*([\d/.]+)$", real.strip().lower())
+    if not a or not b:
+        return False
+    kind = ALIASES.get(a[1], a[1])
+    return b[1].startswith(kind) and a[2] == b[2]
 
 
 def _interface_exists(kind: str, number: str, known: list[str]) -> bool:

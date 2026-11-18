@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Warning before cutting the program off from a device
+- 🟢 `validation/validator.py`: the program reaches each device on its management IP. If that IP is on one of the
+  device's known interfaces (e.g. `Vlan1 10.0.1.11/24`), a `shutdown`, `no ip address` or a new `ip address` on
+  that interface now gets a warning: the program (and the rollback) would lose the device. Only a warning, the
+  user may really want it. Test: `test_change_on_the_management_interface_warns`.
+
 ### The AI no longer guesses when the request itself is wrong
 - 🟡 `pipeline.py` (shared file): when a plan is rejected, the second try now tells the AI to fix only its own
   mistakes. If the user's request is impossible (e.g. VLANs 20-5000), it must return no changes and explain the
