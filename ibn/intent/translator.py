@@ -62,12 +62,7 @@ Rules:
   unless the user asks for management).
 - Use ONLY interface names that appear in that device's "interfaces"
   (e.g. if it has "Ethernet0/0", never write "GigabitEthernet0/0").
-- Use the IP addresses the user typed EXACTLY as written. Never replace one with an address
-  you think is better.
-  On a /31 link (two routers) BOTH addresses are usable interface IPs: there is no network or
-  broadcast address, so 10.0.12.0/31 and 10.0.12.1/31 are both correct.
 - If the request is unclear or impossible, return no steps and explain why in "summary".
-  Don't suggest a different value to use instead: the user decides that.
 
 Vendor notes and examples:
 {vendor_notes}

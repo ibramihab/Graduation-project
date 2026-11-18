@@ -194,19 +194,6 @@ def test_wrong_ip_in_the_request_is_refused_in_our_words(kb):
     assert all(e.startswith("Your request:") for e in plan["validation"]["errors"])
 
 
-def test_the_ai_is_taught_to_keep_the_users_ip(kb):
-    # Intent: the rule is in the instructions the AI reads first
-    from ibn.intent.translator import SYSTEM_PROMPT
-    assert "EXACTLY as written" in SYSTEM_PROMPT and "/31" in SYSTEM_PROMPT
-
-    # Validation: if it still changes a /31 address, the second-try message explains why it's valid
-    plan = {"intent": "Set the IP of interface Ethernet0/1 on R1 to 10.0.12.0/31",
-            "changes": [change("R1", ["interface Ethernet0/1", "ip address 10.0.12.1 255.255.255.254"],
-                               ["interface Ethernet0/1", "no ip address"])]}
-    message = validate(plan, kb)["errors"][0]
-    assert "10.0.12.0 is a valid address (on a /31 link" in message and "exactly as written" in message
-
-
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

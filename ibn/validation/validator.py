@@ -204,19 +204,14 @@ def _changed_values_errors(plan: dict, kb) -> list[str]:
         if asked.startswith(("255.", "0.")) or asked in existing or asked in used:
             continue
         instead = sorted(u for u in used if u not in existing and not u.startswith(("255.", "0.")))
-        prefix = re.search(rf"(?<![\d.]){re.escape(asked)}/(\d+)", request)
-        errors.append(_changed_value("IP address", asked, instead, prefix[1] if prefix else None))
+        errors.append(_changed_value("IP address", asked, instead))
     return errors
 
 
-def _changed_value(what: str, asked: str, instead: list[str], prefix: str | None = None) -> str:
-    """Sent back to the AI on its second try. The user's IP already passed request_problems(),
-    so it IS valid: say so, so the AI stops "fixing" it (it did that with 10.0.12.0/31)."""
+def _changed_value(what: str, asked: str, instead: list[str]) -> str:
     used = f" (it uses {', '.join(instead)} instead)" if instead else ""
-    why = " (on a /31 link both addresses can be used: there is no network or broadcast address)" \
-        if prefix == "31" else ""
-    return (f"You asked for {what} {asked}, but the plan doesn't use it{used}. {asked} is a valid "
-            f"address{why}: use it exactly as written. The AI must not change the user's values.")
+    return (f"You asked for {what} {asked}, but the plan doesn't use it{used}. The AI must not change "
+            f"your values: if {asked} can't be used, the plan must have no changes and say why.")
 
 
 def _ip_problem(command: str) -> str | None:

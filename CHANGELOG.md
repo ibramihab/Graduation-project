@@ -7,12 +7,6 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
-### The AI is taught to keep the user's IP (and the /31 rule)
-- 🟡 `intent/translator.py`: new rules in the AI's instructions: use the user's IP addresses exactly as written,
-  on a /31 link both addresses are usable (10.0.12.0/31 is correct), and don't suggest another value.
-- 🟡 `validation/validator.py`: if the AI still changes the user's IP, the second-try message says the IP is valid
-  (and why, for /31) and to use it exactly as written. Test: `test_the_ai_is_taught_to_keep_the_users_ip`.
-
 ### A wrong IP in the request is refused in the program's own words
 - 🟢 `validation/validator.py`: `request_problems()` checks the IPs the user typed (300.1.1.1, 10.5.5, a broken
   mask, or a network/broadcast address given to an interface). If one is wrong, the errors are only
