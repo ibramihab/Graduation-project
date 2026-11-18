@@ -32,6 +32,7 @@ PROFILE = VendorProfile(
     show_config="show running-config",
     show_interfaces="show ip interface",
     parse_interfaces=ip_interfaces_with_mask,
+    show_vlans="show vlan brief",  # on a router it just answers "% Invalid input": no VLANs
     neighbors="cdp",
     error_markers=["% Invalid", "% Incomplete", "% Ambiguous", "% Unknown"],
 

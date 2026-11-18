@@ -313,6 +313,44 @@ def test_ip_conflicts_are_refused(kb):
         assert errors(*ok) == "", ok
 
 
+def test_renaming_an_existing_vlan_warns(kb, monkeypatch):
+    def warnings(commands, device="SW1"):
+        return " ".join(validate({"changes": [change(device, commands, ["no vlan 10"])]}, kb)["warnings"])
+
+    # Made by the program before (a successful change in the history)
+    kb.record_change("SW1", {"time": "2020-01-01T10:00:00", "type": "config", "success": True,
+                             "commands": ["vlan 10", "name HR"]})
+    assert "VLAN 10 already exists on SW1 as 'HR': this plan renames it to 'Sales'" in warnings(["vlan 10", "name Sales"])
+    assert "already exists" not in warnings(["vlan 10", "name HR"])      # same name
+    assert "already exists" not in warnings(["vlan 20", "name Sales"])   # a new VLAN
+    assert "already exists" not in warnings(["vlan 10", "name Sales"], device="R1")  # another device
+    # A failed (rolled back) change doesn't count; a later "no vlan 10" deletes it
+    kb.record_change("SW1", {"time": "2020-01-01T10:05:00", "type": "config", "success": False,
+                             "commands": ["vlan 10", "name Wrong"]})
+    assert "as 'HR'" in warnings(["vlan 10", "name Sales"])
+    kb.record_change("SW1", {"time": "2020-01-01T10:10:00", "type": "config", "success": True,
+                             "commands": ["no vlan 10"]})
+    assert "already exists" not in warnings(["vlan 10", "name Sales"])
+
+    # A real switch: "Find links & IPs" reads its VLANs (and only later changes count on top)
+    from ibn.infrastructure import discovery
+
+    class Switch:
+        def __init__(self, device): self.device = device
+        def __enter__(self): return self
+        def __exit__(self, *error): return False
+        def get_interfaces(self): return []
+        def get_neighbors(self): return []
+        def get_vlans(self): return ["1 default", "30 Finance"] if self.device["name"] == "SW1" else []
+
+    monkeypatch.setattr(discovery, "get_driver", lambda device: Switch(device))
+    discovery.discover_links(kb)
+    assert kb.get_device("SW1")["vlans"] == ["1 default", "30 Finance"]
+    assert "vlans" not in kb.get_device("R1")  # a router has none
+    assert "VLAN 30 already exists on SW1 as 'Finance'" in warnings(["vlan 30", "name Guests"])
+    assert "already exists" not in warnings(["vlan 10", "name Sales"])  # gone from the switch
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]
@@ -654,6 +692,24 @@ Loopback0 is up, line protocol is up
     assert get_vendor("cisco_ios").show_interfaces == "show ip interface"
     assert get_vendor("cisco_ios").parse_interfaces(output) == [
         "Ethernet0/0 10.1.2.1/24", "Ethernet0/1 unassigned", "Loopback0 10.0.0.1/32"]
+
+
+def test_vlans_are_read_from_real_switches_and_nxos_interfaces_still_work():
+    output = """VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Et0/0, Et0/1, Et0/2
+                                                Et0/3
+10   HR                               active
+1002 fddi-default                     act/unsup"""
+    for vendor in ("cisco_ios", "cisco_nxos", "arista_eos"):
+        assert get_vendor(vendor).show_vlans == "show vlan brief"
+        assert get_vendor(vendor).parse_vlans(output) == ["1 default", "10 HR", "1002 fddi-default"]
+    assert get_vendor("cisco_ios").parse_vlans("% Invalid input detected at '^' marker.") == []  # a router
+    # NX-OS prints "show ip interface" differently: it keeps the brief table
+    nxos = get_vendor("cisco_nxos")
+    assert nxos.show_interfaces == "show ip interface brief"
+    assert nxos.parse_interfaces("Ethernet1/1     10.1.1.1        protocol-up/link-up/admin-up") == [
+        "Ethernet1/1 10.1.1.1"]
 
 
 def test_wrapper_lines_are_cleaned_per_vendor():

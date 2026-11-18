@@ -28,6 +28,9 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      the same IP on two devices or two interfaces, a device's management IP reused, and two
      interfaces of ONE device in overlapping subnets (a real Cisco refuses that with
      "% ... overlaps with ..."). Moving an IP inside the same plan ("no ip address" first) is fine
+ 16. renaming a VLAN that already exists ("vlan 10" + "name Sales" while VLAN 10 is "HR")
+     gets a warning. The VLANs we know come from the switch ("Find links & IPs" reads
+     "show vlan brief") and from the program's own successful changes after that
  14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
      or a network/broadcast address given to an interface) is refused in OUR words, whatever
      the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
@@ -148,6 +151,7 @@ def validate(plan: dict, kb) -> dict:
         # Would this change cut the program off from the device? (its management interface)
         warnings += _management_warnings(name, device, change.get("commands", []))
         warnings += _door_warnings(name, device, change.get("commands", []))
+        warnings += _vlan_rename_warnings(name, device, change.get("commands", []), kb)
         errors += _management_rollback_errors(name, device, change)
 
         # Interface names must exist on the device (if we know its interfaces).
@@ -222,6 +226,56 @@ def _changed_value(what: str, asked: str, instead: list[str]) -> str:
     used = f" (it uses {', '.join(instead)} instead)" if instead else ""
     return (f"You asked for {what} {asked}, but the plan doesn't use it{used}. The AI must not change "
             f"your values: if {asked} can't be used, the plan must have no changes and say why.")
+
+
+def _vlan_rename_warnings(name: str, device: dict, commands: list[str], kb) -> list[str]:
+    existing = known_vlans(device, kb.get_history(name))
+    warnings = []
+    for number, new_name in _vlan_names(commands).items():
+        if new_name and number in existing and existing[number] and existing[number] != new_name:
+            warnings.append(f"{name}: VLAN {number} already exists on {name} as '{existing[number]}': "
+                            f"this plan renames it to '{new_name}'")
+    return warnings
+
+
+def known_vlans(device: dict, history: list[dict]) -> dict[str, str]:
+    """{"10": "HR"}: what the switch said at "Find links & IPs", then the program's own
+    successful changes since then (a failed plan was rolled back, so it doesn't count)."""
+    vlans = {}
+    for line in device.get("vlans") or []:
+        number, _, vlan_name = line.partition(" ")
+        vlans[number] = vlan_name
+    read_at = device.get("vlans_read_at", "")
+    for entry in sorted(history, key=lambda e: e.get("time", "")):
+        if entry.get("success") and entry.get("type", "config") == "config" and entry.get("time", "") > read_at:
+            for number, vlan_name in _vlan_names(entry.get("commands", []), vlans).items():
+                if vlan_name is None:
+                    vlans.pop(number, None)  # "no vlan 10"
+                else:
+                    vlans[number] = vlan_name
+    return vlans
+
+
+def _vlan_names(commands: list[str], before: dict | None = None) -> dict[str, str | None]:
+    """What the commands do to VLANs: {"10": "Sales"} (created/renamed), {"10": None} (deleted).
+    "vlan 10" then "name Sales" (Cisco, Arista, NX-OS; Huawei may write "description Sales")."""
+    result, current = {}, None
+    for command in commands:
+        line = command.strip()
+        created = re.match(r"vlan\s+(\d+)$", line, re.IGNORECASE)
+        deleted = re.match(r"(?:no|undo)\s+vlan\s+(\d+)$", line, re.IGNORECASE)
+        named = re.match(r"(?:name|description)\s+(.+)$", line, re.IGNORECASE)
+        if created:
+            current = created[1]
+            result.setdefault(current, (before or {}).get(current, ""))  # created, no name yet
+        elif deleted:
+            result[deleted[1]] = None
+            current = None
+        elif named and current:
+            result[current] = named[1].strip().strip('"')
+        elif not line.startswith((" ", "\t")):
+            current = None  # another command: we left the VLAN's settings
+    return result
 
 
 def _ip_conflict_errors(plan: dict, kb) -> list[str]:

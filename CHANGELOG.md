@@ -7,6 +7,18 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Warning before renaming a VLAN that already exists
+- 🟢 Infrastructure: "Find links & IPs" also reads the VLANs of switches (`show vlan brief` on Cisco IOS, NX-OS,
+  Arista) and saves them on the device: new fields `vlans` (`["10 HR", "20 Sales"]`) and `vlans_read_at`.
+  New optional driver method `get_vlans()` (`drivers/base.py`, `drivers/cli.py`); new vendor fields `show_vlans`
+  and `parse_vlans` (`vendors/base.py`). Older drivers without `get_vlans` still work.
+- 🟢 `validation/validator.py`: "vlan 10" + "name Sales" while VLAN 10 is "HR" gets a warning
+  ("VLAN 10 already exists on sw1 as 'HR': this plan renames it to 'Sales'"). Known VLANs = what the switch said,
+  plus the program's own successful changes since then (works on simulated devices too, from the history).
+- 🟡 `vendors/cisco_nxos.py`: back to `show ip interface brief` (NX-OS prints `show ip interface` differently, so the
+  mask change for IOS had broken NX-OS interface reading).
+  Tests: `test_renaming_an_existing_vlan_warns`, `test_vlans_are_read_from_real_switches_and_nxos_interfaces_still_work`.
+
 ### Validation refuses IP conflicts
 - 🟢 `validation/validator.py`: compared with the IPs the knowledge base knows (from "Find links & IPs" or typed
   by hand), a plan is refused if it gives an IP that's already on another device or interface, reuses another

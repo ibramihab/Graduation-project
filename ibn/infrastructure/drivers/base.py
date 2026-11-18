@@ -36,6 +36,11 @@ class Driver(ABC):
         Optional: drivers that can't do this just return nothing."""
         return []
 
+    def get_vlans(self) -> list[str]:
+        """VLANs of a switch as "number name", e.g. ["1 default", "10 HR"].
+        Optional: drivers that can't do this just return nothing."""
+        return []
+
     def get_neighbors(self) -> list[str]:
         """Names of directly connected devices (for topology discovery).
         Optional: drivers that can't do this just return nothing."""
