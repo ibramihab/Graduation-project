@@ -31,6 +31,11 @@ The AI can make mistakes, so we never trust it blindly. Checks:
  16. renaming a VLAN that already exists ("vlan 10" + "name Sales" while VLAN 10 is "HR")
      gets a warning. The VLANs we know come from the switch ("Find links & IPs" reads
      "show vlan brief") and from the program's own successful changes after that
+ 17. missing references (warnings): a command that points at something the device may not have
+     - an access list used by "ip access-group" / "access-class" (Cisco then filters NOTHING)
+     - the VLAN of "switchport access vlan" (a Cisco switch quietly creates it, with no name)
+     - the next hop of "ip route" outside every connected subnet (the route may never work)
+     What the device has = its last backup + the program's successful changes + this plan
  14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
      or a network/broadcast address given to an interface) is refused in OUR words, whatever
      the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
@@ -165,6 +170,7 @@ def validate(plan: dict, kb) -> dict:
 
     if plan.get("changes"):
         errors += _changed_values_errors(plan, kb)
+        warnings += _reference_warnings(plan, kb)
         errors += _ip_conflict_errors(plan, kb)
 
     # The user's own request is wrong: say so ourselves (a small AI may "fix" it with a value of its own).
@@ -276,6 +282,100 @@ def _vlan_names(commands: list[str], before: dict | None = None) -> dict[str, st
         elif not line.startswith((" ", "\t")):
             current = None  # another command: we left the VLAN's settings
     return result
+
+
+# ---- 17. missing references ----
+ACL_USED = re.compile(r"^\s*(ip access-group|access-class)\s+(\S+)\s+(?:in|out)\b", re.IGNORECASE)
+ACL_MADE = re.compile(r"^\s*(?:access-list\s+(\S+)\s|ip access-list\s+(?:standard|extended)\s+(\S+))",
+                      re.IGNORECASE)
+ACCESS_VLAN = re.compile(r"^\s*switchport access vlan\s+(\d+)\s*$", re.IGNORECASE)
+STATIC_ROUTE = re.compile(r"^\s*ip route\s+\S+\s+\S+\s+(\d+\.\d+\.\d+\.\d+)", re.IGNORECASE)
+
+
+def _reference_warnings(plan: dict, kb) -> list[str]:
+    warnings = []
+    for change in plan["changes"]:
+        name = change.get("device")
+        device = kb.get_device(name)
+        if not device or change.get("type") == "check":
+            continue
+        # What this device has (or will have): its last backup, the program's successful
+        # changes, and everything this plan does on it.
+        history = kb.get_history(name)
+        planned = [c for step in plan["changes"] if step.get("device") == name and step.get("type") != "check"
+                   for c in step.get("commands", [])]
+        done = [c for entry in history if entry.get("success") and entry.get("type", "config") == "config"
+                for c in entry.get("commands", [])]
+        lines = (device.get("last_config") or "").splitlines() + done + planned
+        commands = change.get("commands", [])
+        warnings += _acl_warnings(name, commands, lines)
+        warnings += _access_vlan_warnings(name, device, commands, history, planned)
+        warnings += _next_hop_warnings(name, device, commands, planned)
+    return warnings
+
+
+def _acl_warnings(name: str, commands: list[str], lines: list[str]) -> list[str]:
+    """ "ip access-group 101 in" with no "access-list 101 ..." anywhere: Cisco applies it anyway
+    and lets everything through, so the user THINKS the port is protected."""
+    defined = {made[1] or made[2] for line in lines if (made := ACL_MADE.match(line))}
+    warnings = []
+    for command in commands:
+        used = ACL_USED.match(command)
+        if used and used[2] not in defined:
+            danger = ("it filters NOTHING: all traffic goes through" if used[1].lower() == "ip access-group"
+                      else "logins are accepted from anywhere")
+            warnings.append(f"{name}: '{command.strip()}' uses access list {used[2]}, but it isn't in this "
+                            f"plan and the program hasn't seen it on {name}. If it doesn't exist, {danger}.")
+    return warnings
+
+
+def _access_vlan_warnings(name, device, commands, history, planned) -> list[str]:
+    """ "switchport access vlan 50" when VLAN 50 doesn't exist: a Cisco switch creates it by itself."""
+    known = set(known_vlans(device, history)) | {"1"}  # VLAN 1 always exists
+    known |= {n for n, vlan_name in _vlan_names(planned).items() if vlan_name is not None}
+    warnings = []
+    for command in commands:
+        port_vlan = ACCESS_VLAN.match(command)
+        if port_vlan and port_vlan[1] not in known:
+            warnings.append(f"{name}: '{command.strip()}' puts a port in VLAN {port_vlan[1]}, which the program "
+                            f"doesn't know on {name}. A Cisco switch then creates VLAN {port_vlan[1]} by itself, "
+                            f"with no name: create it first ('vlan {port_vlan[1]}' + 'name ...') if you want one.")
+    return warnings
+
+
+def _next_hop_warnings(name, device, commands, planned) -> list[str]:
+    """ "ip route ... 10.9.9.1" when no interface of the device is in 10.9.9.x."""
+    subnets = []
+    for line in device.get("interfaces") or []:
+        parts = line.split()
+        if len(parts) > 1 and "/" in parts[1]:
+            try:
+                subnets.append(ipaddress.IPv4Network(parts[1], strict=False))
+            except ValueError:
+                pass
+    for _, ip, prefix, _ in _ips_in_commands(planned)[0]:  # interfaces this plan gives an IP
+        if prefix is not None:
+            try:
+                subnets.append(ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False))
+            except ValueError:
+                pass
+    if not subnets:
+        return []  # we don't know its subnets (no masks saved): can't tell
+    warnings = []
+    for command in commands:
+        route = STATIC_ROUTE.match(command)
+        if not route:
+            continue
+        try:
+            hop = ipaddress.IPv4Address(route[1])
+        except ValueError:
+            continue  # an invalid IP: the IP check reports it
+        if not any(hop in subnet for subnet in subnets):
+            shown = ", ".join(str(s) for s in subnets[:4]) + (", ..." if len(subnets) > 4 else "")
+            warnings.append(f"{name}: the next hop {hop} in '{command.strip()}' isn't on any network {name} is "
+                            f"directly connected to ({shown}). The route only works if {name} can already "
+                            f"reach {hop} another way.")
+    return warnings
 
 
 def _ip_conflict_errors(plan: dict, kb) -> list[str]:

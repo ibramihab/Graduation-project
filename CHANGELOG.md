@@ -7,6 +7,14 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Validation warns about missing references
+- 🟢 `validation/validator.py`: warnings when a command points at something the device may not have
+  (what it has = its last backup + the program's successful changes + this plan):
+  - `ip access-group 101 in` / `access-class 10 in` with no access list 101 / 10 (Cisco then filters nothing);
+  - `switchport access vlan 60` with no VLAN 60 (a Cisco switch creates it by itself, with no name);
+  - `ip route ... 10.9.9.1` when no interface is in 10.9.9.x (needs interfaces saved with masks).
+  Test: `test_missing_references_warn`.
+
 ### Warning before renaming a VLAN that already exists
 - 🟢 Infrastructure: "Find links & IPs" also reads the VLANs of switches (`show vlan brief` on Cisco IOS, NX-OS,
   Arista) and saves them on the device: new fields `vlans` (`["10 HR", "20 Sales"]`) and `vlans_read_at`.

@@ -351,6 +351,43 @@ def test_renaming_an_existing_vlan_warns(kb, monkeypatch):
     assert "already exists" not in warnings(["vlan 10", "name Sales"])  # gone from the switch
 
 
+def test_missing_references_warn(kb):
+    def warnings(*changes):
+        return " ".join(validate({"changes": list(changes)}, kb)["warnings"])
+
+    # 1-2. Access lists: used but never created -> Cisco filters nothing
+    apply_101 = change("R1", ["interface Ethernet0/0", "ip access-group 101 in"],
+                       ["interface Ethernet0/0", "no ip access-group 101 in"])
+    assert "uses access list 101" in warnings(apply_101) and "filters NOTHING" in warnings(apply_101)
+    assert "logins are accepted from anywhere" in warnings(
+        change("R1", ["line vty 0 4", "access-class 10 in"], ["line vty 0 4", "no access-class 10 in"]))
+    # ...not when the plan creates it, or the device's backup / the program's history has it
+    assert "access list" not in warnings(change("R1", ["access-list 101 deny ip any host 10.9.9.9",
+                                                      "access-list 101 permit ip any any",
+                                                      "interface Ethernet0/0", "ip access-group 101 in"],
+                                                ["no access-list 101"]))
+    kb.save_backup("R1", "hostname R1\nip access-list extended BLOCK\n deny ip any any\naccess-list 101 permit ip any any")
+    assert "access list" not in warnings(apply_101)
+    assert "access list" not in warnings(change("R1", ["interface Ethernet0/0", "ip access-group BLOCK out"], ["x"]))
+
+    # 3. A port in a VLAN that doesn't exist -> the switch creates it with no name
+    port_60 = change("SW1", ["interface Ethernet0/1", "switchport access vlan 60"], ["interface Ethernet0/1", "no switchport access vlan"])
+    assert "puts a port in VLAN 60" in warnings(port_60)
+    assert "VLAN 60" not in warnings(change("SW1", ["vlan 60", "name Users"], ["no vlan 60"]), port_60)  # created in the plan
+    assert "puts a port" not in warnings(change("SW1", ["interface Ethernet0/1", "switchport access vlan 1"], ["x"]))
+    kb.update_device("SW1", vlans=["1 default", "60 Users"], vlans_read_at="2020-01-01T00:00:00")  # read from the switch
+    assert "puts a port" not in warnings(port_60)
+
+    # 4. A static route whose next hop isn't on a connected network
+    route = lambda hop: change("R1", [f"ip route 192.168.5.0 255.255.255.0 {hop}"], [f"no ip route 192.168.5.0 255.255.255.0 {hop}"])
+    assert "next hop" not in warnings(route("10.0.12.2"))  # no masks saved yet: can't tell, no warning
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.0.12.1/24", "Loopback0 10.0.0.1/32"])
+    assert "next hop" not in warnings(route("10.0.12.2"))
+    assert "the next hop 10.9.9.1" in warnings(route("10.9.9.1"))
+    assert "next hop" not in warnings(change("R1", ["interface Ethernet0/1", "ip address 10.9.9.2 255.255.255.0"],
+                                             ["interface Ethernet0/1", "no ip address"]), route("10.9.9.1"))
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]
