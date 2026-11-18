@@ -7,6 +7,10 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Tidier VS Code Explorer
+- 🟡 `.vscode/settings.json`: also hides `.github`, `.vs`, `.gitattributes`, `.gitignore` in the Explorer
+  (only hidden in VS Code; the files are unchanged and still work).
+
 ### RAG reads vendor documentation too
 - 🟢 New RAG source "docs" (`ibn/intent/rag/sources.py`): text files in `ibn/vendors/<vendor>/docs/` are cut
   into pieces of ~300 tokens; the closest pieces go into the prompt. `RAG_SOURCES=examples,docs` (default).
