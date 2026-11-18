@@ -19,6 +19,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      interface, and if the plan changes the management IP, the rollback must put the old one back
  12. IP addresses in the commands are valid: each part 0-255, a real mask, and not the
      network or broadcast address of their subnet
+ 13. the plan does what the user asked: every new IP address the user typed must appear in
+     the commands. The AI may not quietly change it (asked for 10.1.1.0, it wrote 10.1.1.1)
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -145,7 +147,39 @@ def validate(plan: dict, kb) -> dict:
                         errors.append(f"{name}: interface '{kind}{number}' does not exist "
                                       f"(it has: {', '.join(known)})")
 
+    if plan.get("changes"):
+        errors += _changed_values_errors(plan, kb)
+
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _changed_values_errors(plan: dict, kb) -> list[str]:
+    """The IP addresses the user typed must be in the plan, unchanged."""
+    # On the AI's second try the request also holds the errors we sent back: keep only the user's words.
+    request = plan.get("intent", "").split("Your previous plan was rejected")[0]
+    commands = " ".join(c for change in plan["changes"] for c in change.get("commands", []))
+    errors = []
+
+    # IP addresses. Skip masks (255.255.255.0, 0.0.0.255) and IPs the network already has
+    # ("change sw1's IP from 10.0.1.11 to ..." names the old one, which won't be in the commands).
+    ip = r"\b\d{1,3}(?:\.\d{1,3}){3}\b"
+    existing = set()
+    for device in kb.list_devices():
+        existing.add((device.get("ip") or "").strip())
+        existing.update(i.split()[1].split("/")[0] for i in device.get("interfaces") or [] if len(i.split()) > 1)
+    used = set(re.findall(ip, commands))
+    for asked in dict.fromkeys(re.findall(ip, request)):
+        if asked.startswith(("255.", "0.")) or asked in existing or asked in used:
+            continue
+        instead = sorted(u for u in used if u not in existing and not u.startswith(("255.", "0.")))
+        errors.append(_changed_value("IP address", asked, instead))
+    return errors
+
+
+def _changed_value(what: str, asked: str, instead: list[str]) -> str:
+    used = f" (it uses {', '.join(instead)} instead)" if instead else ""
+    return (f"You asked for {what} {asked}, but the plan doesn't use it{used}. The AI must not change "
+            f"your values: if {asked} can't be used, the plan must have no changes and say why.")
 
 
 def _ip_problem(command: str) -> str | None:

@@ -151,6 +151,25 @@ def test_invalid_ip_address_is_refused(kb):
         assert errors(good) == "", good
 
 
+def test_the_ai_may_not_change_the_users_values(kb):
+    def errors(request, commands):
+        plan = {"intent": request, "changes": [change("R1", commands, ["no interface Loopback5"])]}
+        return " ".join(validate(plan, kb)["errors"])
+
+    # The real mistake: asked for 10.1.1.0, it wrote 10.1.1.1
+    bad = errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.0/24",
+                 ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"])
+    assert "You asked for IP address 10.1.1.0" in bad and "it uses 10.1.1.1 instead" in bad
+    # Kept as asked: no error (masks and IPs the network already has are not "values to keep")
+    assert errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.1/24",
+                  ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"]) == ""
+    assert errors("Change R1's IP from 10.0.0.1 to 10.0.0.9 255.255.255.0",
+                  ["interface Ethernet0/0", "ip address 10.0.0.9 255.255.255.0"]) == ""
+    # On the second try, the errors we sent back are not the user's words
+    assert errors("Set R1's loopback to 5.5.5.5/32\n\nYour previous plan was rejected by the safety "
+                  "checks:\n- R1: 'ip address 300.1.1.1 ...'", ["interface Loopback5", "ip address 5.5.5.5 32"]) == ""
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

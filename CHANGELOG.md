@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The AI may not change the user's IP addresses
+- 🟢 `validation/validator.py`: every new IP address the user typed must appear in the plan's commands. The AI
+  once turned "10.1.1.0/24" into `ip address 10.1.1.1` without saying so. Now that's an error, so the AI's second
+  try must keep the IP (then the IP check says why it's wrong) or return no changes and explain. Masks and IPs
+  the network already has are not checked.
+  Test: `test_the_ai_may_not_change_the_users_values`.
+
 ### Validation refuses invalid IP addresses
 - 🟢 `validation/validator.py`: `ip address` (and FortiGate `set ip`) must have a real IP (4 numbers 0-255), a
   real mask (`255.0.255.0` and the ACL wildcard `0.0.0.255` are refused), and not the network or broadcast address
