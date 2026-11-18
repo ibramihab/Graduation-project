@@ -7,6 +7,16 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Simple "set the IP" requests are written by the program, without the AI
+- 🟢 `intent/translator.py`: "Set the IP of interface Ethernet0/1 on R1 to 10.0.12.0/31" (or "... to 10.5.5.1
+  with mask 255.255.255.0") on a Cisco IOS or simulated device is turned into commands by the program itself:
+  `interface Ethernet0/1` / `ip address 10.0.12.0 255.255.255.254`. Always right, instant, and the user's IP
+  exactly (the small AI refused valid /31 addresses). Short names (`e0/1`) become the saved interface name, and
+  the rollback puts the interface's old IP back when it's known. Other wordings and vendors go to the AI as
+  before; the plan is validated like any other. The plan has a new field `"written_by": "program"`.
+- 🟡 `pipeline.py` (shared file): no second try for a plan the program wrote (it would be the same).
+  Test: `test_simple_ip_request_is_written_by_the_program`.
+
 ### When the AI refuses a request with valid IPs
 - 🔴 Removed: the rules "keep the user's IP / the /31 rule" in the AI's instructions (`intent/translator.py`). The
   small local AI ignored them.

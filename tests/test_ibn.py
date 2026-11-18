@@ -205,7 +205,7 @@ class AnswersInTurn:
 
 
 def test_refused_valid_ip_gets_a_second_try_and_our_words(kb):
-    request = "Set the IP of interface Ethernet0/1 on R1 to 10.0.12.0/31"
+    request = "Give interface Ethernet0/1 on R1 the IP 10.0.12.0/31"  # a wording the program doesn't write itself
     refusal = {"summary": "Impossible, use 10.0.12.1/31 or 10.0.12.2/31", "changes": []}
     good = {"summary": "x", "changes": [change("R1", ["interface Ethernet0/1",
             "ip address 10.0.12.0 255.255.255.254"], ["interface Ethernet0/1", "no ip address"])]}
@@ -225,6 +225,37 @@ def test_refused_valid_ip_gets_a_second_try_and_our_words(kb):
     llm = AnswersInTurn({"summary": "Too vague: say what to change", "changes": []})
     plan = pipeline.propose("Make the network faster", kb, llm)
     assert plan["attempts"] == 1 and plan["summary"] == "Too vague: say what to change"
+
+
+class NoAI:
+    """Fails the test if the AI is asked anything."""
+    def ask_json(self, system, user, schema):
+        raise AssertionError("the AI should not be asked")
+
+
+def test_simple_ip_request_is_written_by_the_program(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.0.0.1/24", "Ethernet0/1 10.0.12.5/24"])
+    plan = pipeline.propose("Set the IP of interface e0/1 on r1 to 10.0.12.0/31", kb, NoAI())
+    assert plan["validation"]["ok"] and plan["attempts"] == 1
+    step = plan["changes"][0]
+    assert step["device"] == "R1"
+    assert step["commands"] == ["interface Ethernet0/1", "ip address 10.0.12.0 255.255.255.254"]
+    assert step["rollback"] == ["interface Ethernet0/1", "ip address 10.0.12.5 255.255.255.0"]  # its old IP
+
+    # mask written out, interface with no saved IP: the undo removes the IP
+    plan = pipeline.propose("Set the IP address of Loopback5 on R1 to 5.5.5.5 with mask 255.255.255.255", kb, NoAI())
+    assert plan["changes"][0]["rollback"] == ["interface Loopback5", "no ip address"]
+
+    # A wrong IP is still refused in our words (the program's plan is checked like any other)
+    plan = pipeline.propose("Set the IP of interface Ethernet0/1 on R1 to 10.1.1.0/24", kb, NoAI())
+    assert not plan["validation"]["ok"] and "network address" in plan["summary"]
+
+    # Other phrasing, unknown devices or other vendors still go to the AI
+    from ibn.intent.translator import simple_plan
+    devices = kb.list_devices() + [{"name": "HW1", "vendor": "huawei"}]
+    assert simple_plan("Give R1's e0/1 the address 10.0.12.0/31", devices) is None
+    assert simple_plan("Set the IP of interface e0/1 on R9 to 10.0.12.0/31", devices) is None
+    assert simple_plan("Set the IP of interface GE0/0/1 on HW1 to 10.0.12.0/31", devices) is None
 
 
 def test_check_steps_are_read_only(kb):

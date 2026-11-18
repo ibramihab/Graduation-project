@@ -39,7 +39,8 @@ def propose(text: str, kb, llm) -> dict:
         plan["validation"] = validate(plan, kb)
         # Stop when it passed, or when the user's own request is wrong
         # (asking the AI again can't fix the request, and a small AI would only guess a new value).
-        if plan["validation"]["ok"] or request_problems(text):
+        # A plan written by the program itself would come out the same: no second try.
+        if plan["validation"]["ok"] or request_problems(text) or plan.get("written_by") == "program":
             break
         if not plan["changes"]:
             # The AI made no plan. If the request has IPs we checked, they are valid: say so and ask
