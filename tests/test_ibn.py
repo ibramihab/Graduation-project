@@ -273,6 +273,41 @@ def test_dropped_connection_fails_if_the_new_ip_is_silent(kb, monkeypatch):
     assert kb.get_device("SW1")["ip"] == "10.0.0.2"  # we don't save an IP that doesn't work
 
 
+def test_rollback_moves_the_device_back_to_its_old_ip(kb):
+    # SW1 moves to 10.0.0.50, then R1 fails: the rollback puts 10.0.0.2 back on SW1,
+    # and the program must go back to 10.0.0.2 too (not keep the new IP).
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+    llm = FakeLLM({"summary": "x", "changes": [
+        change("SW1", ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"],
+               ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]),
+        change("R1", ["this is invalid"], ["no shutdown"]),
+    ]})
+    result = pipeline.approve(pipeline.propose("move SW1, break R1", kb, llm)["id"], kb)
+    assert not result["success"]
+    assert ("SW1", "rolled back") in [(r["device"], r["status"]) for r in result["results"]]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"
+    assert kb.get_device("SW1")["interfaces"] == ["Vlan1 10.0.0.2/24", "Ethernet0/1"]
+
+
+def test_rollback_follows_a_real_device_back_to_its_old_ip(kb, monkeypatch):
+    # Real devices: every send drops the connection (R1's too, so R1 fails and we roll back).
+    # SW1 answers on the new IP, then (after the rollback) on the old one.
+    from ibn.control import controller
+    monkeypatch.setattr(controller, "get_driver", lambda device: DroppingDriver())
+    monkeypatch.setattr(controller, "ping", lambda ip: ip in ("10.0.0.50", "10.0.0.2"))
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24"])
+    llm = FakeLLM({"summary": "x", "changes": [
+        change("SW1", ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"],
+               ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]),
+        change("R1", ["hostname R1-new"], ["hostname R1"]),
+    ]})
+    result = pipeline.approve(pipeline.propose("move SW1, rename R1", kb, llm)["id"], kb)
+    statuses = [(r["device"], r["status"]) for r in result["results"]]
+    assert ("SW1", "applied") in statuses and ("R1", "failed") in statuses
+    assert ("SW1", "rolled back") in statuses
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"
+
+
 def test_dry_run_does_not_move_the_device(kb, monkeypatch):
     from ibn import settings
     monkeypatch.setattr(settings, "DRY_RUN", True)

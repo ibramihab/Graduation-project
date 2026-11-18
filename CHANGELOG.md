@@ -14,9 +14,10 @@ Every change to the project is listed here, so nothing surprises you.
   silent = failure (rollback as usual). Nothing moves with `DRY_RUN=true`.
 - 🟡 `validation/validator.py`: the management-IP helpers are now functions Control uses too
   (`management_interface`, `new_management_ip`); the warning text says the program will follow the new IP.
-- Known limit: if a LATER device in the same plan fails, the rollback puts the old IP back on the device but
-  the program keeps the new one: fix it with Edit.
-  Tests: `test_new_management_ip_is_saved_automatically`, `test_dropped_connection_*`, `test_dry_run_does_not_move_the_device`.
+- If a LATER device in the same plan fails, the rollback puts the old IP back on the device, and the program
+  follows it back to the old IP the same way (ping, then save).
+  Tests: `test_new_management_ip_is_saved_automatically`, `test_dropped_connection_*`,
+  `test_rollback_*_back_to_its_old_ip`, `test_dry_run_does_not_move_the_device`.
 
 ### Warning before cutting the program off from a device
 - 🟢 `validation/validator.py`: the program reaches each device on its management IP. If that IP is on one of the

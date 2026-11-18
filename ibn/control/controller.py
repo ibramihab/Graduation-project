@@ -37,7 +37,7 @@ def apply_plan(plan: dict, kb) -> dict:
             if settings.DRY_RUN:
                 output = "DRY RUN - nothing was sent:\n" + "\n".join(change["commands"])
             else:
-                output = _send(device, change, kb)
+                output = _send(device, change["commands"], kb)
             done.append(change)
             results.append({"device": device["name"], "status": "applied", "output": output})
         except Exception as error:
@@ -54,13 +54,15 @@ def apply_plan(plan: dict, kb) -> dict:
     return {"success": success, "results": results}
 
 
-def _send(device: dict, change: dict, kb) -> str:
-    """Back up the config, send the commands. Follows the device if they change its management IP."""
-    moving_to = new_management_ip(device, change["commands"])  # e.g. ("10.0.1.50", 24) or None
+def _send(device: dict, commands: list[str], kb, backup: bool = True) -> str:
+    """(Back up the config,) send the commands. Follows the device if they change its management IP.
+    Used to apply a change (with a backup) and to roll it back (backup=False)."""
+    moving_to = new_management_ip(device, commands)  # e.g. ("10.0.1.50", 24) or None
     try:
         with get_driver(device) as driver:
-            kb.save_backup(device["name"], driver.get_config())
-            output = driver.send_config(change["commands"])
+            if backup:
+                kb.save_backup(device["name"], driver.get_config())
+            output = driver.send_config(commands)
     except Exception:
         # Losing the connection is expected when we change the IP we are connected to.
         if not (moving_to and ping(moving_to[0])):
@@ -99,8 +101,8 @@ def _rollback(changes: list[dict], kb) -> list[dict]:
         if not change.get("rollback") or settings.DRY_RUN:
             continue
         try:
-            with get_driver(device) as driver:
-                output = driver.send_config(change["rollback"])
+            # The rollback may put the OLD management IP back: _send follows the device there too.
+            output = _send(device, change["rollback"], kb, backup=False)
             results.append({"device": device["name"], "status": "rolled back", "output": output})
         except Exception as error:
             results.append({"device": device["name"], "status": "ROLLBACK FAILED - check by hand",
