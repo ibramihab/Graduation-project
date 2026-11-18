@@ -7,6 +7,15 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### A wrong IP in the request is refused in the program's own words
+- 🟢 `validation/validator.py`: `request_problems()` checks the IPs the user typed (300.1.1.1, 10.5.5, a broken
+  mask, or a network/broadcast address given to an interface). If one is wrong, the errors are only
+  "Your request: ...", whatever the AI wrote. Network addresses in route/OSPF requests are fine.
+- 🟡 `pipeline.py` (shared file): when the request itself is wrong, the AI is not asked a second time (it would
+  only guess a new value, and it's slow on a local model), its plan is hidden, and the summary is ours:
+  "This can't be done. 10.1.1.0/24 uses 10.1.1.0, the network address of 10.1.1.0/24...".
+  Test: `test_wrong_ip_in_the_request_is_refused_in_our_words`.
+
 ### The AI says what's wrong, without suggesting another value
 - 🟡 `pipeline.py` (shared file): the second-try rule now says to explain why the request can't be done and the
   rule it breaks, but NOT to suggest a replacement (it used to answer "the IP should be 10.1.1.1/24"). The user

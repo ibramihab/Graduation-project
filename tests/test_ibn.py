@@ -156,10 +156,10 @@ def test_the_ai_may_not_change_the_users_values(kb):
         plan = {"intent": request, "changes": [change("R1", commands, ["no interface Loopback5"])]}
         return " ".join(validate(plan, kb)["errors"])
 
-    # The real mistake: asked for 10.1.1.0, it wrote 10.1.1.1
-    bad = errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.0/24",
+    # The AI changed a valid IP the user asked for (10.1.1.5 -> 10.1.1.1)
+    bad = errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.5/24",
                  ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"])
-    assert "You asked for IP address 10.1.1.0" in bad and "it uses 10.1.1.1 instead" in bad
+    assert "You asked for IP address 10.1.1.5" in bad and "it uses 10.1.1.1 instead" in bad
     # Kept as asked: no error (masks and IPs the network already has are not "values to keep")
     assert errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.1/24",
                   ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"]) == ""
@@ -168,6 +168,30 @@ def test_the_ai_may_not_change_the_users_values(kb):
     # On the second try, the errors we sent back are not the user's words
     assert errors("Set R1's loopback to 5.5.5.5/32\n\nYour previous plan was rejected by the safety "
                   "checks:\n- R1: 'ip address 300.1.1.1 ...'", ["interface Loopback5", "ip address 5.5.5.5 32"]) == ""
+
+
+def test_wrong_ip_in_the_request_is_refused_in_our_words(kb):
+    from ibn.validation.validator import request_problems
+    assert "network address" in request_problems("Set the IP of interface Ethernet0/0 on R2 to 10.1.1.0/24")[0]
+    assert "broadcast address" in request_problems("Set the IP of interface e0/2 on R2 to 172.16.0.255/24")[0]
+    assert "invalid IP address 300.1.1.1" in request_problems("Create loopback 5 with IP 300.1.1.1/32 on R1")[0]
+    assert "invalid IP address 10.5.5" in request_problems("Set the IP of interface e0/1 on R1 to 10.5.5/24")[0]
+    assert "invalid mask" in request_problems("Set the IP of interface e0/1 on R1 to 10.5.5.1 with mask 255.0.255.0")[0]
+    # Fine: a good IP, a /31 link, a network address in a route, a version number
+    for ok in ("Set the IP of interface Ethernet0/0 on R2 to 10.1.1.1/24",
+               "Set the IP of interface e0/1 on R1 to 10.0.12.0/31",
+               "Add a static route to 192.168.5.0/24 via 10.1.2.2 on R1",
+               "Upgrade R1 to IOS 15.2.4"):
+        assert request_problems(ok) == [], ok
+
+    # The whole flow: the AI "fixes" 10.1.1.0 into 10.1.1.1. We don't ask it again, we hide its plan,
+    # and the message is ours, with no other IP suggested.
+    llm = FakeLLM({"summary": "The correct IP is 10.1.1.1/24", "changes": [
+        change("R1", ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"], ["no ip address"])]})
+    plan = pipeline.propose("Set the IP of interface Ethernet0/0 on R1 to 10.1.1.0/24", kb, llm)
+    assert plan["attempts"] == 1 and plan["changes"] == [] and not plan["validation"]["ok"]
+    assert plan["summary"].startswith("This can't be done.") and "10.1.1.1" not in plan["summary"]
+    assert all(e.startswith("Your request:") for e in plan["validation"]["errors"])
 
 
 def test_check_steps_are_read_only(kb):

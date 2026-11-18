@@ -10,6 +10,7 @@ import uuid
 from .control import apply_plan
 from .intent import translate
 from .validation import validate
+from .validation.validator import request_problems
 
 PENDING: dict[str, dict] = {}  # plans waiting for the user to approve them
 ATTEMPTS = 2  # if validation finds mistakes, the AI gets one more try to fix them
@@ -31,13 +32,19 @@ def propose(text: str, kb, llm) -> dict:
     for attempt in range(1, ATTEMPTS + 1):
         plan = translate(request, kb.list_devices(), llm, kb.list_links())
         plan["validation"] = validate(plan, kb)
-        if plan["validation"]["ok"] or not plan["changes"]:
+        # Stop when it passed, when the AI made no plan, or when the user's own request is wrong
+        # (asking the AI again can't fix the request, and a small AI would only guess a new value).
+        if plan["validation"]["ok"] or not plan["changes"] or request_problems(text):
             break
         # Tell the AI what was wrong and let it try again.
         request = (text + "\n\nYour previous plan was rejected by the safety checks:\n- "
                    + "\n- ".join(plan["validation"]["errors"]) + "\n" + NO_GUESSING)
     plan["intent"] = text
     plan["attempts"] = attempt
+    problems = request_problems(text)
+    if problems:  # say it in our words, and hide the AI's plan: nothing it made up is shown
+        plan["summary"] = "This can't be done. " + " ".join(problems)
+        plan["changes"] = []
     plan["id"] = uuid.uuid4().hex[:8]
     if plan["validation"]["ok"]:
         PENDING[plan["id"]] = plan

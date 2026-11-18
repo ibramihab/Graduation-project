@@ -21,6 +21,9 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      network or broadcast address of their subnet
  13. the plan does what the user asked: every new IP address the user typed must appear in
      the commands. The AI may not quietly change it (asked for 10.1.1.0, it wrote 10.1.1.1)
+ 14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
+     or a network/broadcast address given to an interface) is refused in OUR words, whatever
+     the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -150,7 +153,36 @@ def validate(plan: dict, kb) -> dict:
     if plan.get("changes"):
         errors += _changed_values_errors(plan, kb)
 
+    # The user's own request is wrong: say so ourselves (a small AI may "fix" it with a value of its own).
+    problems = request_problems(plan.get("intent", ""))
+    if problems:
+        errors = [f"Your request: {problem}" for problem in problems]
+
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def request_problems(text: str) -> list[str]:
+    """Mistakes in the user's own words, found without the AI: an IP like 300.1.1.1 or 10.5.5,
+    a broken mask, and, when the request sets an interface's IP, a network or broadcast address.
+    (In a route or OSPF request a network address like 192.168.5.0/24 is normal, so not there.)"""
+    text = text.split("Your previous plan was rejected")[0]  # only the user's words
+    sets_interface_ip = (re.search(r"\b(interface|loopback|ip of|ip address)\b", text, re.IGNORECASE)
+                         and not re.search(r"\b(route|network|ospf|eigrp|bgp|rip|advertise|access-list|acl|"
+                                           r"ping|traceroute)\b", text, re.IGNORECASE))
+    problems = []
+    # "10.1.1.0/24", "10.5.5.1 with mask 255.0.255.0", "300.1.1.1", "10.5.5"
+    found = re.findall(r"(?<![\d.])(\d{1,3}(?:\.\d{1,3}){2,4})(?![\d.])(?:/(\d+)|\s+(?:with\s+)?"
+                       r"(?:sub)?(?:net)?mask\s+(\d{1,3}(?:\.\d{1,3}){3}))?", text, re.IGNORECASE)
+    for ip, prefix, mask in found:
+        if ip.startswith(("255.", "0.")) and not prefix:
+            continue  # a mask written on its own
+        if ip.count(".") != 3 and not sets_interface_ip:
+            continue  # "15.2.4" in "IOS 15.2.4" is a version, not a broken IP
+        typed = f"{ip}/{prefix}" if prefix else f"{ip} mask {mask}" if mask else ip
+        problem = _ip_problem(f"ip address {ip}/{prefix}" if prefix else f"ip address {ip} {mask}".strip())
+        if problem and (sets_interface_ip or "address of" not in problem):
+            problems.append(f"{typed} {problem}")
+    return problems
 
 
 def _changed_values_errors(plan: dict, kb) -> list[str]:
