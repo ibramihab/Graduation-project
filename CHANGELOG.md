@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Warning when the plan changes a device the user didn't name
+- 🟢 `validation/validator.py`: if the request names devices (R1, sw1...) and the plan CHANGES another one, a
+  warning: "R1: you didn't name R1 in your request, but the plan changes it". Only device names are compared,
+  so it works in any language. No warning when no device is named, or for read-only (check) steps.
+  Test: `test_changing_a_device_the_user_didnt_name_warns`.
+
 ### Validation warns about missing references
 - 🟢 `validation/validator.py`: warnings when a command points at something the device may not have
   (what it has = its last backup + the program's successful changes + this plan):

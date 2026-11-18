@@ -388,6 +388,25 @@ def test_missing_references_warn(kb):
                                              ["interface Ethernet0/1", "no ip address"]), route("10.9.9.1"))
 
 
+def test_changing_a_device_the_user_didnt_name_warns(kb):
+    def warnings(request, *changes):
+        return " ".join(validate({"intent": request, "changes": list(changes)}, kb)["warnings"])
+
+    vlan_sw1 = change("SW1", ["vlan 20", "name IT"], ["no vlan 20"])
+    subif_r1 = change("R1", ["interface Ethernet0/0.20", "encapsulation dot1Q 20"], ["no interface Ethernet0/0.20"])
+    assert "R1: you didn't name R1 in your request" in warnings("Create VLAN 20 named IT on sw1", vlan_sw1, subif_r1)
+    assert "SW1" not in warnings("Create VLAN 20 named IT on sw1", vlan_sw1, subif_r1).split(":")[0]
+    # Any language: only the device names are compared
+    assert "you didn't name R1" in warnings("اعمل VLAN 20 على sw1", vlan_sw1, subif_r1)
+    # No warning: every changed device is named, no device named at all, or only a check on another one
+    assert "didn't name" not in warnings("VLAN 20 on sw1 and a sub-interface on R1", vlan_sw1, subif_r1)
+    assert "didn't name" not in warnings("Configure VLAN 20 everywhere", vlan_sw1, subif_r1)
+    assert "didn't name" not in warnings("Create VLAN 20 on sw1 and test it", vlan_sw1,
+                                         change("R1", ["ping 10.0.0.2"], [], type="check"))
+    # "R1" inside another word is not R1
+    assert "you didn't name R1" in warnings("Create VLAN 20 on sw1 (not on R10)", vlan_sw1, subif_r1)
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

@@ -36,6 +36,9 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      - the VLAN of "switchport access vlan" (a Cisco switch quietly creates it, with no name)
      - the next hop of "ip route" outside every connected subnet (the route may never work)
      What the device has = its last backup + the program's successful changes + this plan
+ 18. devices the user didn't ask for (warning): if the request names devices and the plan
+     CHANGES another one. Only device names are compared, so it works in any language.
+     (Sometimes right: "make sw1 reach sw2" needs the routers in between. The user decides.)
  14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
      or a network/broadcast address given to an interface) is refused in OUR words, whatever
      the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
@@ -171,6 +174,7 @@ def validate(plan: dict, kb) -> dict:
     if plan.get("changes"):
         errors += _changed_values_errors(plan, kb)
         warnings += _reference_warnings(plan, kb)
+        warnings += _unrequested_device_warnings(plan, kb)
         errors += _ip_conflict_errors(plan, kb)
 
     # The user's own request is wrong: say so ourselves (a small AI may "fix" it with a value of its own).
@@ -282,6 +286,24 @@ def _vlan_names(commands: list[str], before: dict | None = None) -> dict[str, st
         elif not line.startswith((" ", "\t")):
             current = None  # another command: we left the VLAN's settings
     return result
+
+
+# ---- 18. devices the user didn't ask for ----
+def _unrequested_device_warnings(plan: dict, kb) -> list[str]:
+    request = plan.get("intent", "").split("Your previous plan was rejected")[0]  # the user's words
+
+    def named(device_name):  # "R1" as a whole word: not inside "R10" or "R1-old"
+        return re.search(rf"(?<![\w-]){re.escape(device_name)}(?![\w-])", request, re.IGNORECASE)
+
+    if not any(named(d["name"]) for d in kb.list_devices()):
+        return []  # no device named ("all routers"...): nothing to compare
+    warnings = []
+    for device_name in dict.fromkeys(c.get("device") for c in plan["changes"]
+                                      if c.get("type") != "check"):  # a ping/show changes nothing
+        if device_name and not named(device_name):
+            warnings.append(f"{device_name}: you didn't name {device_name} in your request, but the plan "
+                            "changes it. Check that this is what you want.")
+    return warnings
 
 
 # ---- 17. missing references ----
