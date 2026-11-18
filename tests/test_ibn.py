@@ -493,8 +493,12 @@ def test_every_knowledge_example_passes_validation(tmp_path):
     examples = json.loads(open("ibn/vendors/cisco_ios/examples.json", encoding="utf-8").read())
     for name in {c["device"] for e in examples for c in e["plan"]["changes"]}:
         kb.add_device({"name": name, "ip": "10.9.9.9", "vendor": "cisco_ios", "state": "up"})
+    assert len({e["intent"] for e in examples}) == len(examples)  # no request twice
     for e in examples:
-        assert set(e) == {"intent", "plan"}, e
+        assert set(e) == {"intent", "plan"} and set(e["plan"]) == {"summary", "changes"}, e
+        if not e["plan"]["changes"]:  # a request that must be refused: only an explanation
+            assert e["plan"]["summary"], e["intent"]
+            continue
         result = validate(e["plan"], kb)
         assert result["ok"], (e["intent"], result["errors"])
     assert len(SOURCES["examples"].chunks("cisco_ios")) == len(examples)
@@ -537,13 +541,13 @@ def test_rag_embedding_numbers_are_computed_once(monkeypatch):
     monkeypatch.setattr(settings, "RAG_SEARCH", "embedding")
     asked = []
 
-    def fake_embed(texts):  # pretend model: "route" texts point one way, the rest another way
+    def fake_embed(texts):  # pretend model: "static route" texts point one way, the rest another way
         asked.extend(texts)
-        return [[1.0, 0.0] if "route" in t.lower() else [0.0, 1.0] for t in texts]
+        return [[1.0, 0.0] if "static route" in t.lower() else [0.0, 1.0] for t in texts]
     monkeypatch.setattr(embedder, "embed", fake_embed)
-    assert "ip route" in retrieve("I need a route", ["cisco_ios"])
+    assert "ip route" in retrieve("I need a static route", ["cisco_ios"])
     first = len(asked)
-    retrieve("I need a route", ["cisco_ios"])
+    retrieve("I need a static route", ["cisco_ios"])
     assert len(asked) == first + 1  # second time only the request; the examples come from the index
 
     def broken(texts):

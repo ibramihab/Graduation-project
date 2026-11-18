@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### 48 Cisco examples for the RAG
+- 🟢 `ibn/vendors/cisco_ios/examples.json`: 48 solved requests (was 5): static routes, OSPF, ACLs, VLANs/trunks,
+  router-on-a-stick, interfaces, DHCP, NAT, show/ping checks, Arabic, and 3 requests that must be refused.
+  All pass the validation layer; the test now also accepts refusals (no changes, only an explanation).
+
 ### Neo4j removed: the knowledge base is the JSON file
 - 🔴 `ibn/knowledge/neo4j_graph.py`, `docker-compose.yml`, the `neo4j` library, the settings `KB_BACKEND` and
   `NEO4J_*`, and the Neo4j copies of the tests. The graph questions (path, what-if, critical devices) stay:
