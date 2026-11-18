@@ -7,6 +7,17 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The program follows a device to its new management IP
+- 🟢 `control/controller.py`: when an applied plan gives a device's management interface a new IP, the program
+  saves the new IP (and the interface line, e.g. `Vlan1 10.0.1.50/24`) by itself. On a real device the SSH
+  session drops at that moment: that is now expected, so the program pings the new IP; answers = success,
+  silent = failure (rollback as usual). Nothing moves with `DRY_RUN=true`.
+- 🟡 `validation/validator.py`: the management-IP helpers are now functions Control uses too
+  (`management_interface`, `new_management_ip`); the warning text says the program will follow the new IP.
+- Known limit: if a LATER device in the same plan fails, the rollback puts the old IP back on the device but
+  the program keeps the new one: fix it with Edit.
+  Tests: `test_new_management_ip_is_saved_automatically`, `test_dropped_connection_*`, `test_dry_run_does_not_move_the_device`.
+
 ### Warning before cutting the program off from a device
 - 🟢 `validation/validator.py`: the program reaches each device on its management IP. If that IP is on one of the
   device's known interfaces (e.g. `Vlan1 10.0.1.11/24`), a `shutdown`, `no ip address` or a new `ip address` on

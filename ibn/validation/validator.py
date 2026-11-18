@@ -22,6 +22,7 @@ Errors block the change. Warnings are shown to the user before they approve.
 Ideas for later: test the config in a lab (GNS3/EVE-NG) or with Batfish,
 check for IP conflicts using the knowledge base, ask a second LLM to review.
 """
+import ipaddress
 import re
 
 from ..infrastructure.drivers import DRIVERS
@@ -133,21 +134,12 @@ def _management_warnings(name: str, device: dict, commands: list[str]) -> list[s
     """The program reaches the device on ONE IP (device["ip"]). If a command turns off or
     changes the interface that holds that IP, we lose the device and the rollback can't reach it."""
     management_ip = (device.get("ip") or "").strip()  # "  10.0.1.11" typed with spaces is the same IP
-    # Which interface holds the management IP? Interfaces look like "Vlan1 10.0.1.11/24".
-    interface = next((i.split()[0] for i in device.get("interfaces") or []
-                      if len(i.split()) > 1 and i.split()[1].split("/")[0] == management_ip), None)
+    interface = management_interface(device)
     if not interface:
         return []  # we don't know it (no interfaces saved, or the IP is not on any of them)
 
-    warnings, inside = [], False
-    for command in commands:
-        line = command.strip().lower()
-        opened = re.match(r"int(?:erface)?\s+(.+)", line)
-        if opened:  # "interface Vlan1": the next lines are settings of that interface
-            inside = _same_interface(opened[1], interface)
-            continue
-        if not inside:
-            continue
+    warnings = []
+    for command, line in _management_lines(commands, interface):
         new_ip = re.match(r"ip address\s+(\S+)", line)
         if re.match(r"shutdown$", line) or re.match(r"(no|undo) ip address", line):
             warnings.append(f"{name}: '{command}' on {interface} cuts the program's connection "
@@ -155,9 +147,51 @@ def _management_warnings(name: str, device: dict, commands: list[str]) -> list[s
                             "The rollback won't be able to reach it.")
         elif new_ip and new_ip[1] != management_ip and "secondary" not in line:
             warnings.append(f"{name}: '{command}' changes the management IP of {name} "
-                            f"({management_ip} on {interface}): the program will lose the device. "
-                            f"If you apply it, change {name}'s IP with Edit right after.")
+                            f"({management_ip} on {interface}). After applying, the program checks "
+                            "that the device answers on the new IP and then uses it; if it doesn't "
+                            "answer, the change is reported as failed.")
     return warnings
+
+
+def management_interface(device: dict) -> str | None:
+    """The interface that holds the IP the program uses to reach the device, e.g. "Vlan1".
+    Interfaces are saved like "Vlan1 10.0.1.11/24". None if we don't know it."""
+    management_ip = (device.get("ip") or "").strip()
+    for interface in device.get("interfaces") or []:
+        parts = interface.split()
+        if len(parts) > 1 and parts[1].split("/")[0] == management_ip:
+            return parts[0]
+    return None
+
+
+def new_management_ip(device: dict, commands: list[str]) -> tuple[str, int] | None:
+    """If the commands give the management interface a NEW IP, return (ip, prefix length),
+    e.g. ("10.0.1.50", 24). Used by the Control layer to follow the device to its new IP."""
+    interface = management_interface(device)
+    if not interface:
+        return None
+    for _, line in _management_lines(commands, interface):
+        found = re.match(r"ip address\s+(\S+)\s+(\S+)", line)  # "ip address 10.0.1.50 255.255.255.0"
+        if found and "secondary" not in line and found[1] != (device.get("ip") or "").strip():
+            try:  # the mask can be "255.255.255.0" (Cisco) or "24" (Huawei)
+                prefix = ipaddress.IPv4Network(f"0.0.0.0/{found[2]}").prefixlen
+                return str(ipaddress.IPv4Address(found[1])), prefix
+            except ValueError:
+                return None  # not a valid IP or mask: don't follow it
+    return None
+
+
+def _management_lines(commands: list[str], interface: str):
+    """The settings written INSIDE the management interface, as (command, lower-case line).
+    "interface Vlan1" opens it; the next "interface ..." line closes it."""
+    inside = False
+    for command in commands:
+        line = command.strip().lower()
+        opened = re.match(r"int(?:erface)?\s+(.+)", line)
+        if opened:
+            inside = _same_interface(opened[1], interface)
+        elif inside:
+            yield command, line
 
 
 def _same_interface(written: str, real: str) -> bool:

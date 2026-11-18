@@ -224,6 +224,62 @@ def test_failure_rolls_back_every_device(kb):
     assert FAKE_CONFIGS["R1"][-1] == "no ip route 0.0.0.0 0.0.0.0 10.0.0.254"
 
 
+def change_management_ip(kb):
+    """SW1 is reached on 10.0.0.2 (on Vlan1); the plan moves it to 10.0.0.50."""
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+    llm = FakeLLM({"summary": "x", "changes": [change(
+        "SW1", ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"],
+        ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"])]})
+    return pipeline.approve(pipeline.propose("move SW1", kb, llm)["id"], kb)
+
+
+def test_new_management_ip_is_saved_automatically(kb):
+    result = change_management_ip(kb)  # a simulated device: the change just works
+    assert result["success"] and "now reached on 10.0.0.50" in result["results"][0]["output"]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.50"
+    assert kb.get_device("SW1")["interfaces"] == ["Vlan1 10.0.0.50/24", "Ethernet0/1"]
+
+
+class DroppingDriver:
+    """A real device: changing the IP we are connected to drops our SSH session."""
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *error):
+        return False
+
+    def get_config(self):
+        return "hostname SW1"
+
+    def send_config(self, commands):
+        raise ConnectionError("Socket is closed")
+
+
+def test_dropped_connection_is_ok_if_the_new_ip_answers(kb, monkeypatch):
+    from ibn.control import controller
+    monkeypatch.setattr(controller, "get_driver", lambda device: DroppingDriver())
+    monkeypatch.setattr(controller, "ping", lambda ip: ip == "10.0.0.50")  # answers on the new IP
+    result = change_management_ip(kb)
+    assert result["success"] and "dropped" in result["results"][0]["output"]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.50"
+
+
+def test_dropped_connection_fails_if_the_new_ip_is_silent(kb, monkeypatch):
+    from ibn.control import controller
+    monkeypatch.setattr(controller, "get_driver", lambda device: DroppingDriver())
+    monkeypatch.setattr(controller, "ping", lambda ip: False)  # nobody answers on the new IP
+    result = change_management_ip(kb)
+    assert not result["success"] and result["results"][0]["status"] == "failed"
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"  # we don't save an IP that doesn't work
+
+
+def test_dry_run_does_not_move_the_device(kb, monkeypatch):
+    from ibn import settings
+    monkeypatch.setattr(settings, "DRY_RUN", True)
+    assert change_management_ip(kb)["success"]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"  # nothing was sent, so nothing moved
+
+
 def test_plan_can_only_be_approved_once(kb):
     llm = FakeLLM({"summary": "", "changes": [change("R1", ["hostname R1"], ["hostname R1"])]})
     plan = pipeline.propose("x", kb, llm)
