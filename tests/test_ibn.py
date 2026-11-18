@@ -152,6 +152,28 @@ def test_ai_fixes_its_plan_after_validation_errors(kb):
     assert plan["intent"] == "describe R1's first port"
 
 
+class HonestLLM:
+    """First plan has an invalid VLAN; on the second try it refuses instead of guessing."""
+
+    def __init__(self):
+        self.requests = []
+
+    def ask_json(self, system, user, schema):
+        self.requests.append(user)
+        if len(self.requests) == 1:
+            return {"summary": "x", "changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}
+        return {"summary": "VLAN 5000 can't be created: allowed VLANs are 1-4094.", "changes": []}
+
+
+def test_ai_is_told_not_to_guess_the_users_values(kb):
+    llm = HonestLLM()
+    plan = pipeline.propose("create vlan 5000 on SW1", kb, llm)
+    assert "do NOT change or guess" in llm.requests[1]  # the rule was sent with the errors
+    assert "1-4094" in llm.requests[1]                  # and the allowed range, so it can explain
+    assert not plan["validation"]["ok"] and plan["id"] not in pipeline.PENDING  # nothing to approve
+    assert "1-4094" in plan["summary"]
+
+
 def test_happy_path(kb):
     llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["conf t", "vlan 10", "name Sales"], ["no vlan 10"])]})
     plan = pipeline.propose("create vlan 10 on SW1", kb, llm)

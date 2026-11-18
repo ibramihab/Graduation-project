@@ -14,6 +14,15 @@ from .validation import validate
 PENDING: dict[str, dict] = {}  # plans waiting for the user to approve them
 ATTEMPTS = 2  # if validation finds mistakes, the AI gets one more try to fix them
 
+# Sent with the errors on the second try. Without it, a small AI "fixes" a wrong request by
+# guessing (the user asked for VLANs 20-5000, it quietly made it 20-500).
+NO_GUESSING = (
+    "Fix only the mistakes YOU made (wrong command, wrong interface name...).\n"
+    "If the problem is in the user's request itself (for example a number outside the "
+    "allowed range), do NOT change or guess the user's values: return no changes, and in "
+    "\"summary\" say why it can't be done and what the allowed values are."
+)
+
 
 def propose(text: str, kb, llm) -> dict:
     """Steps 1-3: understand the request and check it. Nothing is changed yet."""
@@ -25,7 +34,7 @@ def propose(text: str, kb, llm) -> dict:
             break
         # Tell the AI what was wrong and let it try again.
         request = (text + "\n\nYour previous plan was rejected by the safety checks:\n- "
-                   + "\n- ".join(plan["validation"]["errors"]) + "\nFix these problems.")
+                   + "\n- ".join(plan["validation"]["errors"]) + "\n" + NO_GUESSING)
     plan["intent"] = text
     plan["attempts"] = attempt
     plan["id"] = uuid.uuid4().hex[:8]

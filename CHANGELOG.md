@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The AI no longer guesses when the request itself is wrong
+- 🟡 `pipeline.py` (shared file): when a plan is rejected, the second try now tells the AI to fix only its own
+  mistakes. If the user's request is impossible (e.g. VLANs 20-5000), it must return no changes and explain the
+  allowed values, instead of quietly changing them (it used to turn 5000 into 500). Test:
+  `test_ai_is_told_not_to_guess_the_users_values`.
+
 ### Validation refuses invalid VLAN numbers
 - 🟢 `validation/validator.py`: a `vlan N` (also `switchport access vlan N`, FortiGate `set vlanid N`) with N
   outside 1-4094 is an error, so a plan like "Create VLAN 5000" is blocked before it reaches a device.
