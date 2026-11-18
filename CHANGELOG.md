@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Neo4j removed: the knowledge base is the JSON file
+- 🔴 `ibn/knowledge/neo4j_graph.py`, `docker-compose.yml`, the `neo4j` library, the settings `KB_BACKEND` and
+  `NEO4J_*`, and the Neo4j copies of the tests. The graph questions (path, what-if, critical devices) stay:
+  they use NetworkX on the JSON data. `KnowledgeBase` (`knowledge/base.py`) stays, so a database can come back later.
+
 ### Tidier VS Code Explorer
 - 🟡 `.vscode/settings.json`: also hides `.github`, `.vs`, `.gitattributes`, `.gitignore` in the Explorer
   (only hidden in VS Code; the files are unchanged and still work).

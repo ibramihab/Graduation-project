@@ -112,29 +112,9 @@ The network is naturally a graph, so we store it as one:
 Device properties: name, ip, vendor, protocol, state (up/down), last_config (backup)
 ```
 
-There are two storage options with the **same** methods (`knowledge/base.py`):
-
-| `KB_BACKEND` | File | When to use |
-|---|---|---|
-| `file` (default) | `knowledge/file_graph.py` | Learning. Nothing to install. Saves to `data/knowledge.json`. |
-| `neo4j` | `knowledge/neo4j_graph.py` | The real graph database. |
-
-To use Neo4j: install [Neo4j Desktop](https://neo4j.com/download) (no Docker needed, create a local database with password `password123`), or with Docker:
-
-```bash
-docker compose up -d                # starts Neo4j
-# in .env:  KB_BACKEND=neo4j
-python run.py
-```
-
-Open http://localhost:7474 (user `neo4j`, password `password123`) and run
-`MATCH (n) RETURN n` to **see** your network as a graph.
-
-`TEST_NEO4J=1 pytest` also runs all the tests against Neo4j. **Warning:** it
-deletes all devices in that Neo4j, so only use it on an empty test database.
-
-**Neo4j is optional.** Users don't need to install it: the default JSON file works
-everywhere, and the graph questions below work with both storages.
+Everything is saved in one JSON file, `data/knowledge.json` (`knowledge/file_graph.py`).
+Nothing to install. The methods are defined in `knowledge/base.py`, so a database could be
+added later without changing the other layers.
 
 ### When your network changes
 
@@ -272,7 +252,5 @@ ibn/
   infrastructure/drivers/      one file per way of talking to devices
   knowledge/base.py            the knowledge base methods
   knowledge/file_graph.py      graph in a JSON file
-  knowledge/neo4j_graph.py     graph in Neo4j
 tests/test_ibn.py              tests for the whole flow
-docker-compose.yml             starts Neo4j
 ```

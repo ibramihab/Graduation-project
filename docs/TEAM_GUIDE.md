@@ -187,7 +187,7 @@ uses it in the same PR.
 | **C. Smaller local model** | `ollama pull qwen2.5:3b`, then `OLLAMA_MODEL=qwen2.5:3b` | free | weaker |
 | **D. No AI** | Work with `pytest` + `simulated` devices. Enough for validation, control, discovery and UI work | free | — |
 
-**Database:** keep `KB_BACKEND=file` (a JSON file, nothing to install). Neo4j is optional.
+**Database:** none to install: the knowledge base is a JSON file (`data/knowledge.json`).
 
 ---
 
@@ -261,7 +261,6 @@ Replace `<Name>`, `<branch>` and `<layer>` with yours.
 - Nicer page: separate tabs (Devices, Topology, History), progress messages.
 - User login (there is none yet).
 - Topology: colors for up/down, link labels with interface names.
-- Neo4j for the demo (the storage contract already supports it).
 
 **Intent (AI)**
 - **An evaluation set first:** `tests/intents.json` with ~50 requests + the expected

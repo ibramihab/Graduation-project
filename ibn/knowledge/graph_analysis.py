@@ -1,6 +1,6 @@
 """Graph questions about the network, using the NetworkX library.
 
-Works with either storage (JSON file or Neo4j): we read the devices and links from
+Works with any storage of the knowledge base: we read the devices and links from
 the knowledge base and build the graph in memory. No extra program to install.
 
     path(kb, "SW1", "SW3")          -> ["SW1", "R1", "R2", "R3", "SW3"]

@@ -5,9 +5,8 @@ from .base import KnowledgeBase
 
 
 def get_knowledge_base() -> KnowledgeBase:
-    """Pick the storage backend from settings. Add new backends here."""
-    if settings.KB_BACKEND == "neo4j":
-        from .neo4j_graph import Neo4jGraph
-        return Neo4jGraph(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
+    """The storage of the knowledge base: a JSON file (data/knowledge.json).
+    Another storage (a database) can be added later: write a class that follows
+    KnowledgeBase (base.py) and return it here. Nothing else changes."""
     from .file_graph import FileGraph
     return FileGraph(settings.KB_FILE)

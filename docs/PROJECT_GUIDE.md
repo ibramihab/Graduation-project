@@ -106,7 +106,6 @@ Graduation-project/
 ├── requirements.txt               [CORE]     list of Python libraries the project needs
 ├── .env                           [CORE]     YOUR settings + secrets (not on GitHub)
 ├── .env.example                   [SUPPORT]  template for .env
-├── docker-compose.yml             [OPTIONAL] starts the Neo4j graph database
 ├── README.md                      [SUPPORT]  short user manual
 ├── CHANGELOG.md                   [SUPPORT]  list of every change, newest first
 ├── docs/PROJECT_GUIDE.md          [SUPPORT]  this guide
@@ -156,10 +155,9 @@ Graduation-project/
 │   │       └── simulated.py       [OPTIONAL] fake device for practice and tests
 │   │
 │   └── knowledge/                 SHARED COMPONENT
-│       ├── __init__.py            [CORE]     picks file or Neo4j storage
+│       ├── __init__.py            [CORE]     gives the knowledge base (JSON file storage)
 │       ├── base.py                [CORE]     the rules every storage must follow
-│       ├── file_graph.py          [CORE*]    graph stored in data/knowledge.json
-│       ├── neo4j_graph.py         [CORE*]    graph stored in Neo4j        (*you need one of the two)
+│       ├── file_graph.py          [CORE]     graph stored in data/knowledge.json
 │       └── graph_analysis.py      [OPTIONAL] graph questions: path, what-if, critical devices
 │
 ├── tests/                         [SUPPORT]  automatic tests (run: pytest)
@@ -172,7 +170,7 @@ Graduation-project/
 ```
 
 **Why VS Code looked overwhelming:** `venv/` alone contains thousands of files
-(Flask, Netmiko, Neo4j... all their code). None of it is yours. The real
+(Flask, Netmiko... all their code). None of it is yours. The real
 project is about **25 small files, ~1,450 lines** in total. The new
 `.vscode/settings.json` hides the [AUTO] folders so you only see your code.
 
@@ -199,7 +197,6 @@ the `venv`, installs libraries (first time only), then runs `run.py`.
 | `flask` | web server (interface) | yes |
 | `anthropic` | Claude AI (`llm.py`) | only if you use Claude |
 | `requests` | Ollama AI (`llm.py`) | only if you use Ollama |
-| `neo4j` | Neo4j storage | only if `KB_BACKEND=neo4j` |
 | `networkx` | graph questions (`graph_analysis.py`) | yes (installed automatically) |
 | `netmiko` | SSH/Telnet to devices | yes (for real devices) |
 | `paramiko<4` | SSH library under Netmiko; pinned because version 4+ can't talk to older Cisco IOS | yes |
@@ -207,11 +204,8 @@ the `venv`, installs libraries (first time only), then runs `run.py`.
 | `pytest` | runs tests | only for testing |
 
 **`.env`** (your copy) / **`.env.example`** (template). All settings in one place: which
-AI, which storage, device login, `DRY_RUN`. Why a separate file: secrets
+AI, the knowledge-base file, device login, `DRY_RUN`. Why a separate file: secrets
 (API keys, passwords) must never be uploaded to GitHub, and `.gitignore` protects `.env`.
-
-**`docker-compose.yml`**. One command (`docker compose up -d`) starts the Neo4j database.
-*Remove it* if you only use `KB_BACKEND=file`.
 
 **`.gitignore`**. Tells Git never to upload `.env`, `data/`, `venv/`, caches. *Needed* (protects secrets).
 
@@ -384,11 +378,7 @@ and links by hand, but the AI needs the interface IPs it collects.
 **`file_graph.py`** (72 lines): the graph stored in one JSON file (`data/knowledge.json`):
 `{"devices": {...}, "links": [["R1","R2"]], "changes": {...}}`. No install needed.
 
-**`neo4j_graph.py`** (63 lines): the same methods using the Neo4j graph database
-(Cypher queries like `MERGE (a)-[:CONNECTED_TO]-(b)`). Devices are nodes,
-links are `CONNECTED_TO` relationships, history is `(Device)-[:HAS_CHANGE]->(Change)`.
-
-**`__init__.py`**: `get_knowledge_base()` picks one of the two from `KB_BACKEND` in `.env`.
+**`__init__.py`**: `get_knowledge_base()` gives the JSON-file storage (a database could be added there later).
 
 ➡ More detail on the knowledge base, the pipeline, `__init__.py`, `templates`/`static`: **Part 3B**.
 
@@ -396,8 +386,7 @@ links are `CONNECTED_TO` relationships, history is `(Device)-[:HAS_CHANGE]->(Cha
 
 **`test_ibn.py`**: 13 tests of the whole flow using a fake AI and simulated devices
 (validation blocks dangerous commands, rollback works, check steps are read-only, the
-AI retries after errors...). Each test runs twice: with file storage and (if
-`TEST_NEO4J=1`) with Neo4j.
+AI retries after errors...).
 Run all tests: `venv\Scripts\python -m pytest`. **Run them after every change.** If they
 pass, you didn't break anything. *Not needed to run the program*, but they are your safety net.
 
@@ -417,7 +406,7 @@ Ours do one of three things:
 |---|---|---|
 | `ibn/__init__.py`, `interface/__init__.py`, `infrastructure/__init__.py` | only a comment | just marks the folder as part of the program |
 | `intent/__init__.py`, `validation/__init__.py`, `control/__init__.py` | e.g. `from .translator import translate` | **shortcut**: `from ibn.intent import translate` instead of `from ibn.intent.translator import translate` |
-| `knowledge/__init__.py` | `get_knowledge_base()` | **decision**: JSON-file storage or Neo4j, based on `KB_BACKEND` in `.env` |
+| `knowledge/__init__.py` | `get_knowledge_base()` | gives the knowledge base (JSON-file storage) |
 | `drivers/__init__.py` | `DRIVERS` + `get_driver()` | **vendor list**: `cisco_ios → CliDriver`, `simulated → SimulatedDriver` |
 
 Never delete them.
@@ -526,38 +515,12 @@ why the storage can be swapped.
 same moment from damaging the file. Simple, no installation, and you can open the file in
 VS Code to see exactly what the system knows.
 
-**3. `neo4j_graph.py`: the same graph in a real graph database.** Same functions, but each
-sends a query in Neo4j's language, **Cypher**:
+**3. `__init__.py`: where the storage is chosen.** `get_knowledge_base()` returns the JSON-file
+storage. Because every storage follows `base.py`, a database could be added later in this one
+place, and the rest of the program would never know.
 
-| Function | Cypher (simplified) | Meaning |
-|---|---|---|
-| `add_device` | `MERGE (d:Device {name: "R1"}) SET d += {...}` | create the node if missing, set its properties |
-| `add_link` | `MERGE (a)-[:CONNECTED_TO]-(b)` | connect two nodes (no duplicates) |
-| `list_links` | `MATCH (a)-[:CONNECTED_TO]-(b) RETURN a.name, b.name` | find all connections |
-| `record_change` | `CREATE (d)-[:HAS_CHANGE]->(:Change {...})` | attach a history node to the device |
-| `delete_device` | `DETACH DELETE d` | remove the node and all its edges |
-
-At startup it also makes device names **unique**. History is saved as JSON text inside each
-Change node (Neo4j properties can't hold nested lists). Advantages: you can **see** the
-network as a graph at http://localhost:7474, and later ask graph questions ("path from SW1
-to SW3?", "which devices depend on R2?").
-
-**4. `__init__.py`: the switch.** `get_knowledge_base()` reads `KB_BACKEND` from `.env`:
-`neo4j` → Neo4j, anything else → the JSON file. The rest of the program never knows which.
-
-| | JSON file (`file`) | Neo4j (`neo4j`) |
-|---|---|---|
-| Setup | none | Neo4j Desktop, or Docker + `docker compose up -d` |
-| See it | open `data/knowledge.json` | graph picture at localhost:7474 |
-| Best for | everyday use, no installation | presentation (graph picture), very big networks, sharing one database in a team |
-
-Switching is one line in `.env`, but you add your devices again: the two storages don't share data.
-
-**Users don't have to install Neo4j.** The JSON file is the default and needs nothing.
-Graph questions (below) work with both storages.
-
-**5. `graph_analysis.py`: graph questions (NetworkX).** Reads the devices and links from
-whichever storage is active, builds the graph in memory with the **NetworkX** library
+**4. `graph_analysis.py`: graph questions (NetworkX).** Reads the devices and links from
+the knowledge base, builds the graph in memory with the **NetworkX** library
 (installed automatically, nothing for users to install), and answers:
 
 | Function | Question | Example answer (your lab) |
@@ -597,13 +560,11 @@ The **minimal core** (what the system can't run without) is:
 run.py, requirements.txt, .env, ibn/settings.py, ibn/pipeline.py,
 interface/ (web.py, index.html, vis-network.min.js), intent/ (llm.py, translator.py),
 validation/validator.py, vendors/ (base.py, __init__.py, your vendors), control/controller.py,
-drivers/ (__init__.py, base.py, cli.py), knowledge/ (base.py + ONE of the two storages)
+drivers/ (__init__.py, base.py, cli.py), knowledge/ (base.py, file_graph.py)
 ```
 
 | You could remove | Saves | You lose |
 |---|---|---|
-| `neo4j_graph.py` + `docker-compose.yml` + `neo4j` library | ~80 lines + Docker | the "real graph database" (your original requirement) |
-| `file_graph.py` | ~70 lines | running without Docker; the tests use it |
 | `discovery.py` + 3 buttons | ~90 lines | ping scan, up/down, auto links, **interface IPs for the AI** |
 | `simulated.py` | ~30 lines | practising without devices; the tests use it |
 | `start.bat`, `update.bat`, `lab/`, `docs/` | nothing in the program | convenience and notes |
@@ -631,7 +592,7 @@ Behind a contract you can change anything:
 | **The plan** (JSON shape) | `translator.py` `PLAN_SCHEMA` | change the AI, the checks, or the executor independently |
 | **`ask_json()`** | `llm.py` | swap/add any AI (Claude, Ollama, GPT, a fine-tuned model) |
 | **`Driver`** | `drivers/base.py` | add any vendor or access method (SSH, web, REST, NETCONF, SDN) |
-| **`KnowledgeBase`** | `knowledge/base.py` | swap storage (JSON, Neo4j, another DB) |
+| **`KnowledgeBase`** | `knowledge/base.py` | swap storage (JSON today, a database later) |
 
 **Can existing files be modified, or do they serve only one task?** Every file can be
 modified and extended. The rule is simple:
@@ -719,7 +680,6 @@ Add methods to `knowledge/base.py`, implement them in both storages, fill them f
 | **schema** | the exact allowed shape of some JSON |
 | **LLM / prompt** | the AI model / the instructions + question we send it |
 | **Netmiko / Paramiko** | Python libraries for SSH/Telnet to network devices |
-| **Neo4j / Cypher** | a graph database / its query language |
 | **venv** | a private folder of libraries for this project only |
 | **pytest** | the tool that runs the automatic tests |
 | **Git / commit / push / pull** | version history / save a checkpoint / upload / download |

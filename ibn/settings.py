@@ -23,14 +23,8 @@ RAG_SEARCH = os.getenv("RAG_SEARCH", "embedding")      # "embedding" (needs RAG_
 RAG_EMBED_MODEL = os.getenv("RAG_EMBED_MODEL", "bge-m3")
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))             # how many chunks per source go into the prompt
 
-# --- Knowledge base ---
-# "neo4j" = real graph database (run it with docker compose)
-# "file"  = tiny graph saved in a JSON file (no install needed, good for learning)
-KB_BACKEND = os.getenv("KB_BACKEND", "file")
+# --- Knowledge base: devices, links and history, saved in one JSON file ---
 KB_FILE = os.getenv("KB_FILE", "data/knowledge.json")
-NEO4J_URI = os.getenv("NEO4J_URI", "bolt://localhost:7687")
-NEO4J_USER = os.getenv("NEO4J_USER", "neo4j")
-NEO4J_PASSWORD = os.getenv("NEO4J_PASSWORD", "password123")
 
 # --- Infrastructure ---
 # Default login used for devices (one shared account keeps things simple).

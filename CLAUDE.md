@@ -30,7 +30,7 @@ This is a 4-person graduation project: a small, layered **Intent-Based Networkin
    **Adding** new methods, fields or URLs is fine; **renaming or removing** them breaks others.
 3. **Shared files** (`index.html`, `web.py`, `pipeline.py`, `requirements.txt`, `CHANGELOG.md`):
    keep edits small and only where needed.
-4. **Run the tests before every commit:** `python -m pytest` (no AI, lab or Neo4j needed).
+4. **Run the tests before every commit:** `python -m pytest` (no AI or lab needed).
    Add a test for new behavior in `tests/test_ibn.py`.
 5. **Git:** work on the teammate's own branch (`ebraam`, `asmaa`, `menna`, `heba`), never
    commit directly to `main`. Changes reach `main` through a Pull Request.

@@ -1,7 +1,6 @@
 """Tests for the whole pipeline, with no real devices and no real AI.
 Run them with:  pytest
 """
-import os
 
 import pytest
 
@@ -32,26 +31,11 @@ def rag_for_tests(tmp_path, monkeypatch):
     monkeypatch.setattr(index, "INDEX_FILE", str(tmp_path / "rag_index.json"))
 
 
-def make_neo4j():
-    """Only runs with  TEST_NEO4J=1 pytest  because it DELETES the devices in Neo4j.
-    Never use it on a Neo4j that holds your real network data."""
-    from ibn import settings
-    from ibn.knowledge.neo4j_graph import Neo4jGraph
-    if os.getenv("TEST_NEO4J") != "1":
-        pytest.skip("set TEST_NEO4J=1 to also test Neo4j")
-    try:
-        kb = Neo4jGraph(settings.NEO4J_URI, settings.NEO4J_USER, settings.NEO4J_PASSWORD)
-    except Exception:
-        pytest.skip("Neo4j is not running")
-    kb._run("MATCH (n) WHERE n:Device OR n:Change DETACH DELETE n")  # start empty
-    return kb
-
-
-# Every test runs twice: once with the JSON file graph, once with Neo4j.
-@pytest.fixture(params=["file", "neo4j"])
-def kb(request, tmp_path):
+# A small test network in a temporary JSON file: R1 - SW1 (both simulated).
+@pytest.fixture
+def kb(tmp_path):
     FAKE_CONFIGS.clear()
-    kb = FileGraph(str(tmp_path / "kb.json")) if request.param == "file" else make_neo4j()
+    kb = FileGraph(str(tmp_path / "kb.json"))
     kb.add_device({"name": "R1", "ip": "10.0.0.1", "vendor": "simulated", "state": "up"})
     kb.add_device({"name": "SW1", "ip": "10.0.0.2", "vendor": "simulated", "state": "up"})
     kb.add_link("R1", "SW1")
