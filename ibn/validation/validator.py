@@ -21,6 +21,9 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      network or broadcast address of their subnet
  13. the plan does what the user asked: every new IP address the user typed must appear in
      the commands. The AI may not quietly change it (asked for 10.1.1.0, it wrote 10.1.1.1)
+ 10b. the same for the "door" to the lab: an interface whose subnet holds this PC's own IP
+     (e.g. R2 e0/3 192.168.43.2/24 while the PC is 192.168.43.1). Every device is reached
+     through it, so cutting it cuts the program off from ALL of them
  14. the request itself: an IP the user typed that can never work (300.1.1.1, a broken mask,
      or a network/broadcast address given to an interface) is refused in OUR words, whatever
      the AI wrote (see request_problems; the pipeline then doesn't ask the AI again)
@@ -33,6 +36,7 @@ check for IP conflicts using the knowledge base, ask a second LLM to review.
 """
 import ipaddress
 import re
+import socket
 
 from ..infrastructure.drivers import DRIVERS
 from ..knowledge.graph_analysis import impact
@@ -139,6 +143,7 @@ def validate(plan: dict, kb) -> dict:
 
         # Would this change cut the program off from the device? (its management interface)
         warnings += _management_warnings(name, device, change.get("commands", []))
+        warnings += _door_warnings(name, device, change.get("commands", []))
         errors += _management_rollback_errors(name, device, change)
 
         # Interface names must exist on the device (if we know its interfaces).
@@ -261,6 +266,38 @@ def _management_warnings(name: str, device: dict, commands: list[str]) -> list[s
                             f"({management_ip} on {interface}). After applying, the program checks "
                             "that the device answers on the new IP and then uses it; if it doesn't "
                             "answer, the change is reported as failed.")
+    return warnings
+
+
+def local_ips() -> list[str]:
+    """This PC's own IPv4 addresses (the program runs here). Empty if they can't be read."""
+    try:
+        return socket.gethostbyname_ex(socket.gethostname())[2]
+    except OSError:
+        return []
+
+
+def _door_warnings(name: str, device: dict, commands: list[str]) -> list[str]:
+    """Warn when a command would cut the interface that connects this PC to the lab."""
+    mine = [ipaddress.IPv4Address(ip) for ip in local_ips() if not ip.startswith("127.")]
+    warnings = []
+    for line in device.get("interfaces") or []:
+        parts = line.split()
+        if len(parts) < 2 or "/" not in parts[1] or parts[0] == management_interface(device):
+            continue  # no mask saved, or already covered by the management-IP warning
+        try:
+            subnet = ipaddress.IPv4Network(parts[1], strict=False)
+        except ValueError:
+            continue
+        pc = next((ip for ip in mine if ip in subnet), None)
+        if not pc:
+            continue
+        for command, cmd in _management_lines(commands, parts[0]):
+            if re.match(r"shutdown$", cmd) or re.match(r"(no|undo) ip address", cmd) or \
+                    (re.match(r"ip address\s+", cmd) and "secondary" not in cmd):
+                warnings.append(f"{name}: '{command}' on {parts[0]} can cut the program off from EVERY "
+                                f"device: this PC ({pc}) reaches the lab through {name} {parts[0]} "
+                                f"({parts[1]}). The rollback won't be able to reach anything.")
     return warnings
 
 

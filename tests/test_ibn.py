@@ -258,6 +258,24 @@ def test_simple_ip_request_is_written_by_the_program(kb):
     assert simple_plan("Set the IP of interface GE0/0/1 on HW1 to 10.0.12.0/31", devices) is None
 
 
+def test_the_door_to_the_lab_warns(kb, monkeypatch):
+    # The lab file: this PC is 192.168.43.1, R1 is reached on its Loopback0 (10.0.0.1)
+    # through Ethernet0/3 (192.168.43.2/24). Every device goes through that door.
+    from ibn.validation import validator
+    monkeypatch.setattr(validator, "local_ips", lambda: ["127.0.0.1", "192.168.43.1"])
+    kb.update_device("R1", interfaces=["Loopback0 10.0.0.1/32", "Ethernet0/3 192.168.43.2/24",
+                                       "Ethernet0/1 10.1.2.1/24"])
+
+    def warnings(commands):
+        result = validate({"changes": [change("R1", commands, ["interface Ethernet0/3", "no shutdown"])]}, kb)
+        return " ".join(result["warnings"])
+
+    assert "cut the program off from EVERY device" in warnings(["interface Ethernet0/3", "shutdown"])
+    assert "this PC (192.168.43.1)" in warnings(["interface e0/3", "ip address 192.168.50.2 255.255.255.0"])
+    assert "EVERY device" not in warnings(["interface Ethernet0/1", "shutdown"])   # an ordinary port
+    assert "EVERY device" not in warnings(["interface Ethernet0/3", "description to PC"])
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]
@@ -585,6 +603,20 @@ LoopBack0                         unassigned           up         up(s)"""
     next
 end"""
     assert get_vendor("fortigate").parse_interfaces(forti) == ["port1 192.168.1.99", "port2 unassigned"]
+
+
+def test_cisco_interfaces_are_read_with_their_mask():
+    output = """Ethernet0/0 is up, line protocol is up
+  Internet address is 10.1.2.1/24
+  Broadcast address is 255.255.255.255
+Ethernet0/1 is administratively down, line protocol is down
+  Internet protocol processing disabled
+Loopback0 is up, line protocol is up
+  Internet address is 10.0.0.1/32
+  Secondary address 10.9.9.9/24"""
+    assert get_vendor("cisco_ios").show_interfaces == "show ip interface"
+    assert get_vendor("cisco_ios").parse_interfaces(output) == [
+        "Ethernet0/0 10.1.2.1/24", "Ethernet0/1 unassigned", "Loopback0 10.0.0.1/32"]
 
 
 def test_wrapper_lines_are_cleaned_per_vendor():

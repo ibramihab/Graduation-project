@@ -7,6 +7,15 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Ready for real Cisco devices (EVE-NG): masks saved, and the lab's "door" is protected
+- 🟡 `vendors/cisco_ios.py` (Infrastructure): "Find links & IPs" now reads `show ip interface` instead of
+  `show ip interface brief`, so Cisco interfaces are saved WITH their mask (`Ethernet0/0 10.1.2.1/24`). The
+  rollbacks that put an old IP back need it. Run "Find links & IPs" again on real devices to refresh them.
+  Test: `test_cisco_interfaces_are_read_with_their_mask`.
+- 🟢 `validation/validator.py`: a warning when a change (shutdown, new IP, no IP) hits the interface that connects
+  this PC to the lab (its subnet holds this PC's IP, e.g. R2 e0/3 192.168.43.2/24 with the PC on 192.168.43.1):
+  every device is reached through it. Test: `test_the_door_to_the_lab_warns`.
+
 ### Simple "set the IP" requests are written by the program, without the AI
 - 🟢 `intent/translator.py`: "Set the IP of interface Ethernet0/1 on R1 to 10.0.12.0/31" (or "... to 10.5.5.1
   with mask 255.255.255.0") on a Cisco IOS or simulated device is turned into commands by the program itself:
