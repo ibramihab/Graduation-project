@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Readable results: HTML reports
+- 🟢 `evaluation/run_tests.py` also writes `data/evaluation/<date>_<model>.html`: summary per RAG mode, RAG off vs on
+  side by side (green PASS / yellow HALF / red FAIL), every plan with its problems. Open it in the browser.
+- 🟢 `ibn/intent/plan_log.py` keeps `data/plans.html` next to `plans.csv`: every website plan, newest first.
+
 ### Results are kept: plan log + automatic AI tests
 - 🟢 `ibn/intent/plan_log.py`: every plan is saved as one row in `data/plans.csv` (time, model, RAG on/off, request,
   commands, validation, seconds). Setting `PLAN_LOG` (empty = off). `pipeline.py`: 3 lines (time + save);

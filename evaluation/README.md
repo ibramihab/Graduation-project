@@ -12,7 +12,8 @@ python evaluation\run_tests.py --only dhcp trunk
   - **PASS**: every required command is there, nothing forbidden, validation OK, rollback present
   - **HALF**: right commands, smaller problem (validation errors, no rollback...)
   - **FAIL**: required commands missing, forbidden command, no plan, or an error
-- Results: printed, and saved in `data\evaluation\<date>_<model>.csv` (opens in Excel).
+- Results: printed, and saved in `data\evaluation\<date>_<model>.html`: **open it in the browser** (colored table,
+  RAG off vs on side by side, every plan). The same data is in a `.csv` next to it.
 
 ## Adding a test
 Add an item to `tests.json`:
@@ -26,4 +27,5 @@ Add an item to `tests.json`:
 Use the device names of `lab.json`, and keep tests DIFFERENT from the RAG examples
 (`ibn/vendors/<vendor>/examples.json`), or the AI just copies an example and the score lies.
 
-Also: every plan made on the web page is saved in `data\plans.csv` (setting `PLAN_LOG`).
+Also: every plan made on the web page is saved in `data\plans.html` (open in the browser) and `data\plans.csv`
+(setting `PLAN_LOG`).

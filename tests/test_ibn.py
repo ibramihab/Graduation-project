@@ -590,6 +590,8 @@ def test_every_plan_is_saved_in_the_plan_log(kb, tmp_path, monkeypatch):
     assert [r["request"] for r in rows] == ["create vlan 10 on SW1", "اعمل فيلان 10"]
     assert rows[0]["commands"] == "SW1 (config): vlan 10" and rows[0]["validation"] == "ok"
     assert rows[0]["rag"] == "on" and rows[0]["seconds"] != ""
+    page = open(tmp_path / "plans.html", encoding="utf-8").read()  # the same plans as a web page
+    assert page.index("اعمل فيلان 10") < page.index("create vlan 10 on SW1")  # newest first
     monkeypatch.setattr(settings, "PLAN_LOG", "")  # empty = don't save
     pipeline.propose("create vlan 11 on SW1", kb, llm)
     assert len(list(csv.DictReader(open(tmp_path / "plans.csv", encoding="utf-8-sig")))) == 2
@@ -642,5 +644,7 @@ def test_the_evaluation_runs_and_saves_a_results_file(tmp_path, monkeypatch):
         ("off", "route-1", "PASS"), ("off", "refuse-reload", "FAIL"),  # the fake AI never refuses
         ("on", "route-1", "PASS"), ("on", "refuse-reload", "FAIL")]
     assert "RAG off: 1/2 PASS" in evaluation.summary(rows)
-    path = evaluation.save(rows, folder=str(tmp_path))
-    assert len(list(csv.DictReader(open(path, encoding="utf-8-sig")))) == 4
+    page = evaluation.save(rows, folder=str(tmp_path))  # -> the .html report (+ a .csv next to it)
+    assert len(list(csv.DictReader(open(page[:-5] + ".csv", encoding="utf-8-sig")))) == 4
+    text = open(page, encoding="utf-8").read()
+    assert "1/2 PASS" in text and 'class="PASS">PASS' in text and 'class="FAIL">FAIL' in text

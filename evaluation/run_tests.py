@@ -6,7 +6,8 @@
 
 It uses YOUR AI settings from .env (LLM_PROVIDER, OLLAMA_MODEL...), the fixed test network in
 evaluation/lab.json (not your devices) and the requests in evaluation/tests.json.
-Nothing is sent to any device. Results: printed + saved in data/evaluation/<time>_<model>.csv
+Nothing is sent to any device. Results: printed + saved in data/evaluation/<time>_<model>.html
+(open it in the browser: a clear colored table) and .csv (the same data for Excel).
 
 Marks:
     PASS  every required command is there, nothing forbidden, validation OK, rollback present
@@ -15,6 +16,7 @@ Marks:
 """
 import argparse
 import csv
+import html
 import json
 import os
 import re
@@ -114,27 +116,85 @@ def run(tests: list[dict], llm, rag_modes: list[bool], show=print) -> list[dict]
     return rows
 
 
-def summary(rows: list[dict]) -> str:
-    lines = []
+def totals(rows: list[dict]) -> list[dict]:
+    """Per RAG mode: how many PASS / HALF / FAIL and the average seconds."""
+    result = []
     for rag in dict.fromkeys(r["rag"] for r in rows):
         mine = [r for r in rows if r["rag"] == rag]
-        count = {m: sum(r["mark"] == m for r in mine) for m in ("PASS", "HALF", "FAIL")}
         times = [r["seconds"] for r in mine if isinstance(r["seconds"], (int, float))]
-        average = f"{sum(times) / len(times):.1f}s" if times else "-"
-        lines.append(f"RAG {rag:3}: {count['PASS']}/{len(mine)} PASS, {count['HALF']} HALF, "
-                     f"{count['FAIL']} FAIL, average {average} per plan")
-    return "\n".join(lines)
+        result.append({"rag": rag, "total": len(mine), **{m: sum(r["mark"] == m for r in mine) for m in ("PASS", "HALF", "FAIL")},
+                       "average": f"{sum(times) / len(times):.1f}s" if times else "-"})
+    return result
+
+
+def summary(rows: list[dict]) -> str:
+    return "\n".join(f"RAG {t['rag']:3}: {t['PASS']}/{t['total']} PASS, {t['HALF']} HALF, {t['FAIL']} FAIL, "
+                     f"average {t['average']} per plan" for t in totals(rows))
 
 
 def save(rows: list[dict], folder="data/evaluation") -> str:
+    """Save the results twice: .html (to read in the browser) and .csv (for Excel). -> the .html path"""
     name = re.sub(r"[^\w.-]+", "-", plan_log.model_name())
-    path = os.path.join(folder, f"{datetime.now():%Y-%m-%d_%H%M}_{name}.csv")
+    base = os.path.join(folder, f"{datetime.now():%Y-%m-%d_%H%M}_{name}")
     os.makedirs(folder, exist_ok=True)
-    with open(path, "w", newline="", encoding="utf-8-sig") as f:  # utf-8-sig: Excel shows Arabic
+    with open(base + ".csv", "w", newline="", encoding="utf-8-sig") as f:  # utf-8-sig: Excel shows Arabic
         writer = csv.DictWriter(f, fieldnames=COLUMNS)
         writer.writeheader()
         writer.writerows(rows)
-    return path
+    with open(base + ".html", "w", encoding="utf-8") as f:
+        f.write(report(rows))
+    return base + ".html"
+
+
+# ---------- the HTML report ----------
+STYLE = """
+body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #222; background: #fafafa; }
+h1 { font-size: 22px; margin: 0 0 4px; } h2 { font-size: 17px; margin: 28px 0 8px; }
+.sub { color: #666; margin-bottom: 18px; }
+.cards { display: flex; gap: 12px; flex-wrap: wrap; }
+.card { background: #fff; border: 1px solid #ddd; border-radius: 8px; padding: 12px 16px; min-width: 220px; }
+.card b { font-size: 26px; }
+table { border-collapse: collapse; width: 100%; background: #fff; }
+th, td { border: 1px solid #ddd; padding: 6px 8px; text-align: left; vertical-align: top; font-size: 14px; }
+th { background: #f0f0f0; }
+.PASS { background: #d9f2df; color: #146c2e; font-weight: 600; text-align: center; }
+.HALF { background: #fff1c2; color: #7a5b00; font-weight: 600; text-align: center; }
+.FAIL { background: #fadbd8; color: #9b1c12; font-weight: 600; text-align: center; }
+pre { margin: 0; white-space: pre-wrap; font-size: 13px; direction: ltr; }
+[dir=auto] { unicode-bidi: plaintext; }
+"""
+
+
+def report(rows: list[dict]) -> str:
+    """A self-contained web page: summary per RAG mode, side-by-side marks, then every plan."""
+    e = html.escape
+    modes = list(dict.fromkeys(r["rag"] for r in rows))
+    cards = "".join(f'<div class="card">RAG {e(t["rag"])}<br><b>{t["PASS"]}/{t["total"]} PASS</b><br>'
+                    f'{t["HALF"]} HALF, {t["FAIL"]} FAIL, average {t["average"]} per plan</div>' for t in totals(rows))
+    marks = {(r["id"], r["rag"]): r for r in rows}
+    compare = "".join(
+        f'<tr><td>{e(t["id"])}</td><td>{e(t["feature"])}</td><td dir="auto">{e(t["request"])}</td>'
+        + "".join(f'<td class="{marks[(t["id"], m)]["mark"]}">{marks[(t["id"], m)]["mark"]}</td>'
+                  f'<td>{marks[(t["id"], m)]["seconds"]}</td>' if (t["id"], m) in marks else "<td></td><td></td>"
+                  for m in modes) + "</tr>"
+        for t in {r["id"]: r for r in rows}.values())
+    details = "".join(
+        f'<tr><td>{e(r["rag"])}</td><td>{e(r["id"])}</td><td class="{r["mark"]}">{r["mark"]}</td>'
+        f'<td dir="auto">{e(r["request"])}</td><td><pre>{e(r["plan"]) or "(no plan)"}</pre></td>'
+        f'<td><pre>{e(r["problems"])}</pre></td></tr>' for r in rows)
+    head = "".join(f"<th>RAG {e(m)}</th><th>seconds</th>" for m in modes)
+    return f"""<!doctype html><html><head><meta charset="utf-8"><title>AI test results</title>
+<style>{STYLE}</style></head><body>
+<h1>AI test results</h1>
+<div class="sub">Model: {e(plan_log.model_name())} &middot; {datetime.now():%Y-%m-%d %H:%M} &middot; {len(marks)} plans</div>
+<div class="cards">{cards}</div>
+<h2>Side by side</h2>
+<table><tr><th>Test</th><th>Feature</th><th>Request</th>{head}</tr>{compare}</table>
+<h2>Every plan</h2>
+<table><tr><th>RAG</th><th>Test</th><th>Mark</th><th>Request</th><th>Plan (device: commands)</th><th>Problems</th></tr>{details}</table>
+<p class="sub">PASS = all required commands, validation OK, rollback present &middot; HALF = right commands, smaller problem
+&middot; FAIL = commands missing or wrong, no plan, or an error</p>
+</body></html>"""
 
 
 def main():
@@ -152,7 +212,7 @@ def main():
     if not rows:
         return  # nothing ran (the AI couldn't be reached): no results file
     print("\n" + summary(rows))
-    print(f"Saved: {save(rows)}")
+    print(f"Report (open in the browser): {save(rows)}")
 
 
 if __name__ == "__main__":
