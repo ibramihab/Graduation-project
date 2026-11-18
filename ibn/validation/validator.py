@@ -12,6 +12,7 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      on the device (we know them from "Find links & IPs")
   8. a risky change (shutdown, ACL...) on a device that is a single point of failure
      gets an extra warning saying which parts of the network would be cut off
+  9. VLAN numbers in the commands are valid (1-4094)
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -33,6 +34,9 @@ PHYSICAL_INTERFACE = re.compile(
 
 # Short names that are not the start of the full name ("GE0/0/1" on Huawei).
 ALIASES = {"ge": "gigabitethernet"}
+
+# A VLAN number in a command: "vlan 10", "switchport access vlan 20", "set vlanid 30" (FortiGate).
+VLAN_NUMBER = re.compile(r"\bvlan(?:id)?\s+(\d+)", re.IGNORECASE)
 
 
 def validate(plan: dict, kb) -> dict:
@@ -70,6 +74,13 @@ def validate(plan: dict, kb) -> dict:
         for command in change.get("commands", []):
             if re.search(profile.check_commands, command.strip().lower()):
                 errors.append(f"{name}: '{command}' is a check command, it can't run in config mode")
+
+        # VLAN numbers must be 1-4094 (the AI may write "vlan 5000" without noticing).
+        for command in change.get("commands", []):
+            for number in VLAN_NUMBER.findall(command):
+                if not 1 <= int(number) <= 4094:
+                    errors.append(f"{name}: '{command}' has an invalid VLAN number "
+                                  f"{number} (must be 1-4094)")
 
         # Dangerous commands are blocked everywhere, even inside the rollback.
         for command in change.get("commands", []) + change.get("rollback", []):

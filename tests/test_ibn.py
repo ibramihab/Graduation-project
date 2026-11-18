@@ -74,6 +74,15 @@ def test_validation_blocks_unknown_device(kb):
     assert "not in the knowledge base" in validate(plan, kb)["errors"][0]
 
 
+def test_invalid_vlan_number_is_refused(kb):
+    for bad in (["vlan 5000", "name Test"], ["vlan 0"], ["interface e0/1", "switchport access vlan 4095"]):
+        plan = {"changes": [change("SW1", bad, ["no vlan 1"])]}
+        result = validate(plan, kb)
+        assert not result["ok"] and "invalid VLAN number" in result["errors"][0]
+    for good in (["vlan 1"], ["vlan 10", "name Sales"], ["vlan 4094"]):
+        assert validate({"changes": [change("SW1", good, ["no vlan 10"])]}, kb)["ok"]
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]

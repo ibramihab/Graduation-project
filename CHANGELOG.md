@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Validation refuses invalid VLAN numbers
+- 🟢 `validation/validator.py`: a `vlan N` (also `switchport access vlan N`, FortiGate `set vlanid N`) with N
+  outside 1-4094 is an error, so a plan like "Create VLAN 5000" is blocked before it reaches a device.
+  Test: `test_invalid_vlan_number_is_refused`.
+
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices
   Find links can't read (simulated or hand-drawn labs). The AI needs them to plan routing. Short names become
