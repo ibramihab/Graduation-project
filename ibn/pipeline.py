@@ -84,4 +84,5 @@ def approve(plan_id: str, kb) -> dict:
     check = validate(plan, kb)
     if not check["ok"]:
         return {"success": False, "results": [], "error": "; ".join(check["errors"])}
+    plan["validation"] = check  # the warnings the user approved: saved in the history (validation report)
     return apply_plan(plan, kb)

@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The validation report is saved in the history
+- 🟢 The warnings shown when the user approved a plan are saved with the change: new field `warnings` in each
+  history entry (`control/controller.py`, each device keeps its own), taken from the last check at approval
+  (`pipeline.py`, shared file). The History view shows them under "Warnings when approved"
+  (`interface/templates/index.html`, Interface layer). Older history entries simply have none.
+  Test: `test_approved_warnings_are_saved_in_the_history`.
+
 ### Removed: "Set the IP" requests written by the program
 - 🔴 `intent/translator.py` is back to how it is on `main`: no more program-written plans for
   "Set the IP of interface ... on ... to ..." (English only, one wording, and it bypassed the AI, which stays the

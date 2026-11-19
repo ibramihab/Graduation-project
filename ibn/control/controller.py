@@ -112,7 +112,9 @@ def _rollback(changes: list[dict], kb) -> list[dict]:
 
 def _record(plan: dict, results: list[dict], kb, success: bool) -> None:
     time = datetime.now().isoformat(timespec="seconds")
+    warnings = plan.get("validation", {}).get("warnings", [])
     for change in plan["changes"]:
+        name = change["device"]
         kb.record_change(change["device"], {
             "time": time,
             "intent": plan.get("intent", ""),
@@ -120,4 +122,7 @@ def _record(plan: dict, results: list[dict], kb, success: bool) -> None:
             "commands": change["commands"],
             "success": success,
             "results": [r for r in results if r["device"] == change["device"]],
+            # The validation report: warnings about this device that were shown when the user approved
+            # ("sw1: VLAN 10 already exists...", "R1 is a single point of failure...")
+            "warnings": [w for w in warnings if w.startswith((f"{name}:", f"{name} "))],
         })

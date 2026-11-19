@@ -600,6 +600,19 @@ def test_dry_run_does_not_move_the_device(kb, monkeypatch):
     assert kb.get_device("SW1")["ip"] == "10.0.0.2"  # nothing was sent, so nothing moved
 
 
+def test_approved_warnings_are_saved_in_the_history(kb):
+    # VLAN 10 is "HR"; renaming it gives a warning; the user approves anyway
+    kb.record_change("SW1", {"time": "2020-01-01T10:00:00", "type": "config", "success": True,
+                             "commands": ["vlan 10", "name HR"]})
+    llm = FakeLLM({"summary": "x", "changes": [change("SW1", ["vlan 10", "name Sales"], ["vlan 10", "name HR"]),
+                                              change("R1", ["hostname R1"], ["hostname R1"])]})
+    plan = pipeline.propose("Create VLAN 10 named Sales on SW1 and R1", kb, llm)
+    assert pipeline.approve(plan["id"], kb)["success"]
+    sw1, r1 = kb.get_history("SW1")[-1], kb.get_history("R1")[-1]
+    assert sw1["warnings"] == ["SW1: VLAN 10 already exists on SW1 as 'HR': this plan renames it to 'Sales'"]
+    assert r1["warnings"] == []  # each device keeps only its own warnings
+
+
 def test_plan_can_only_be_approved_once(kb):
     llm = FakeLLM({"summary": "", "changes": [change("R1", ["hostname R1"], ["hostname R1"])]})
     plan = pipeline.propose("x", kb, llm)
