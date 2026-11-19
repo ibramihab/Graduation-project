@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### More RAG knowledge: 92 examples + 10 Cisco notes
+- 🟢 `ibn/vendors/cisco_ios/examples.json`: 92 examples (was 48): more routes, OSPF, ACLs, NAT, DHCP, VLAN/trunk
+  options, port security, STP, EtherChannel, HSRP, NTP/syslog/banner, checks, Arabic, refusals.
+- 🟢 `ibn/vendors/cisco_ios/docs/*.md`: 10 short notes in our own words (static routes, OSPF, ACL, VLANs/trunks,
+  interfaces, DHCP/NAT, switch protection, checks, masks, safety). `.md` notes go to GitHub; pasted `.txt`
+  docs still stay on each laptop (`.gitignore`).
+
 ### Readable results: HTML reports
 - 🟢 `evaluation/run_tests.py` also writes `data/evaluation/<date>_<model>.html`: summary per RAG mode, RAG off vs on
   side by side (green PASS / yellow HALF / red FAIL), every plan with its problems. Open it in the browser.

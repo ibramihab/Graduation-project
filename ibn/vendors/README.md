@@ -24,8 +24,9 @@ ibn/vendors/
 The program notices changed examples by itself (no extra command).
 
 ## Adding documentation
-Put text files in `<vendor>/docs/` (see the README there). The program cuts them into small pieces and
-sends the AI only the closest ones. They are not uploaded to GitHub (copyright and size).
+`<vendor>/docs/` (see the README there): `.md` = our own short notes (on GitHub), `.txt` = text pasted
+from the vendor (stays on your laptop: copyright and size). The program cuts them into small pieces and
+sends the AI only the closest ones.
 
 ## Adding a vendor
 Copy a similar folder, change `profile.py`, add the vendor to the list in `__init__.py`.

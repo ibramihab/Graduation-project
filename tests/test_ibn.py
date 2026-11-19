@@ -540,6 +540,7 @@ def test_rag_embedding_numbers_are_computed_once(monkeypatch):
     from ibn import settings
     from ibn.intent.rag import embedder, retrieve
     monkeypatch.setattr(settings, "RAG_SEARCH", "embedding")
+    monkeypatch.setattr(settings, "RAG_SOURCES", ["examples"])  # one source: the request is embedded once
     asked = []
 
     def fake_embed(texts):  # pretend model: "static route" texts point one way, the rest another way
@@ -648,3 +649,15 @@ def test_the_evaluation_runs_and_saves_a_results_file(tmp_path, monkeypatch):
     assert len(list(csv.DictReader(open(page[:-5] + ".csv", encoding="utf-8-sig")))) == 4
     text = open(page, encoding="utf-8").read()
     assert "1/2 PASS" in text and 'class="PASS">PASS' in text and 'class="FAIL">FAIL' in text
+
+
+def test_the_cisco_notes_are_found_for_matching_requests(monkeypatch):
+    from ibn import settings
+    from ibn.intent.rag import retrieve
+    from ibn.intent.rag.sources import DocsSource
+    pieces = DocsSource().chunks("cisco_ios")
+    assert len(pieces) >= 10 and all("Cisco IOS documentation for the AI" not in p["text"] for p in pieces)  # README skipped
+    monkeypatch.setattr(settings, "RAG_SOURCES", ["docs"])
+    monkeypatch.setattr(settings, "RAG_TOP_K", 2)
+    assert "[ospf]" in retrieve("advertise a network in ospf with the wildcard mask", ["cisco_ios"])
+    assert "[acl]" in retrieve("deny access list permit ip any any", ["cisco_ios"])

@@ -6,7 +6,7 @@ __pycache__/
 .venv/
 venv/
 
-# Vendor documentation (e.g. Cisco guides) stays on each laptop: copyrighted and big.
-# Only the README of each docs/ folder goes to GitHub.
+# Vendor documentation pasted from the vendor (.txt, e.g. Cisco guides) stays on each laptop:
+# copyrighted and big. Our own short notes (.md) go to GitHub for the whole team.
 ibn/vendors/*/docs/*
-!ibn/vendors/*/docs/README.md
+!ibn/vendors/*/docs/*.md
