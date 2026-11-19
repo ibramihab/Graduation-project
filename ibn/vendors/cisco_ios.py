@@ -28,6 +28,24 @@ PROFILE = VendorProfile(
         (r"access-list|access-group", "a firewall rule can block traffic, including ours"),
     ],
 
+    # Syntax: the config commands we know. Add a word here if a real command is refused.
+    config_commands=(
+        r"^(interface|vlan|name|description|shutdown|switchport|spanning-tree|channel-group|"
+        r"speed|duplex|mtu|bandwidth|delay|encapsulation|cdp|lldp|load-interval|keepalive|"
+        r"standby|vrrp|tunnel|service-policy|hostname|banner|logging|ntp|snmp-server|line|"
+        r"login|transport|exec-timeout|exit|access-list|permit|deny|remark|network|"
+        r"passive-interface|default-information|redistribute|router-id|area|neighbor|"
+        r"auto-summary|version|distance|maximum-paths|default-metric|class-map|policy-map|"
+        r"class|police|set|match|route-map|track|vtp|default|clock|service|errdisable|do)\b"
+        r"|^\d+ (permit|deny|remark)\b"                       # numbered line of a named ACL
+        r"|^ip (address|route|access-list|access-group|ospf|nat|helper-address|domain-name|"
+        r"dhcp|default-gateway|routing|cef|http|name-server|prefix-list|sla|redirects|"
+        r"proxy-arp|summary-address|unnumbered|mtu|tcp|vrf|policy|igmp|pim|"
+        r"multicast-routing|host|forward-protocol|ssh|local)\b"
+        r"|^ipv6 "
+        r"|^router (ospf|eigrp|rip|bgp|isis)\b"
+    ),
+
     wrapper_lines={"configure terminal", "conf t", "end", "write memory", "wr"},
     ai_hints="""\
 - Config steps run in configuration mode: do NOT add "configure terminal", "end" or "write memory".

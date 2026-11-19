@@ -154,7 +154,7 @@ def test_happy_path(kb):
 def test_failure_rolls_back_every_device(kb):
     llm = FakeLLM({"summary": "x", "changes": [
         change("R1", ["ip route 0.0.0.0 0.0.0.0 10.0.0.254"], ["no ip route 0.0.0.0 0.0.0.0 10.0.0.254"]),
-        change("SW1", ["this is invalid"], ["undo sw1"]),
+        change("SW1", ["description invalid"], ["no description"]),  # the simulated device refuses "invalid"
     ]})
     plan = pipeline.propose("break it", kb, llm)
     result = pipeline.approve(plan["id"], kb)
@@ -595,3 +595,43 @@ def test_exam_scores_each_phase():
     results = run_exam(ExamLLM(), exam)
     assert [r["passed"] for r in results] == [True, False, True, True]
     assert scores(results) == {1: (2, 3), 3: (1, 1)}
+
+
+# ---- Syntax (pre-validation): known commands and possible values ----
+
+def syntax_errors(kb, commands, rollback=("no description",), type="config"):
+    return validate({"changes": [change("R1", list(commands), list(rollback), type)]}, kb)["errors"]
+
+
+def test_syntax_accepts_normal_cisco_commands(kb):
+    good = ["interface Ethernet0/0", "description Uplink to R2", "ip address 10.1.2.1 255.255.255.0",
+            "no shutdown", "exit", "ip route 192.168.3.0 255.255.255.0 10.1.2.2", "router ospf 1",
+            "network 10.1.2.0 0.0.0.255 area 0", "ip access-list extended BLOCK", "10 deny ip any any",
+            "permit ip any any", "vlan 10", "name Sales", "switchport mode access"]
+    assert syntax_errors(kb, good) == []
+
+
+def test_syntax_refuses_typos(kb):
+    for typo in ["ip rout 192.168.3.0 255.255.255.0 10.1.2.2", "vlna 10", "sh ip int br"]:
+        errors = syntax_errors(kb, [typo])
+        assert errors and "is not a known" in errors[0], typo
+
+
+def test_syntax_refuses_impossible_values(kb):
+    assert "10.0.0.300 is not a valid IP address" in syntax_errors(kb, ["ip address 10.0.0.300 255.255.255.0"])[0]
+    assert "255.0.255.0 is not a valid mask" in syntax_errors(kb, ["ip address 10.0.0.1 255.0.255.0"])[0]
+    assert "(use 192.168.3.0)" in syntax_errors(kb, ["ip route 192.168.3.1 255.255.255.0 10.0.0.2"])[0]
+    assert "VLAN 5000 is outside 1-4094" in syntax_errors(kb, ["vlan 5000"])[0]
+    assert "is not a valid IP address" in syntax_errors(kb, ["ping 10.0.0.300"], [], "check")[0]
+
+
+def test_syntax_checks_the_rollback_too(kb):
+    assert "is not a known" in syntax_errors(kb, ["vlan 10"], ["no vlna 10"])[0]
+
+
+def test_syntax_list_is_skipped_for_vendors_without_one(tmp_path):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    kb.add_device({"name": "HW1", "ip": "10.0.0.1", "vendor": "huawei", "state": "up"})
+    assert validate({"changes": [change("HW1", ["vlan batch 10 20"], ["undo vlan batch 10 20"])]}, kb)["ok"]
+    bad = validate({"changes": [change("HW1", ["ip address 10.0.0.1 255.0.255.0"], ["undo ip address"])]}, kb)
+    assert not bad["ok"]  # the values are still checked on every vendor

@@ -13,6 +13,11 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      on the device (we know them from "Find links & IPs")
   8. a risky change (shutdown, ACL...) on a device that is a single point of failure
      gets an extra warning saying which parts of the network would be cut off
+  9. syntax (pre-validation): every config command is one the vendor knows (no typos
+     like "ip rout"), and the values are possible: IP addresses (no part above 255),
+     masks (255.255.255.0 yes, 255.0.255.0 no), a route's network matches its mask,
+     VLAN numbers 1-4094. These run on every vendor; the "known command" list only
+     on vendors that have one (config_commands in their file, e.g. Cisco).
 
 Result: {"ok": bool, "errors": [...], "warnings": [...]}
 Errors block the change. Warnings are shown to the user before they approve.
@@ -20,6 +25,7 @@ Errors block the change. Warnings are shown to the user before they approve.
 Ideas for later: test the config in a lab (GNS3/EVE-NG) or with Batfish,
 check for IP conflicts using the knowledge base, ask a second LLM to review.
 """
+import ipaddress
 import re
 
 from ..infrastructure.drivers import DRIVERS
@@ -62,6 +68,7 @@ def validate(plan: dict, kb) -> dict:
             for command in change.get("commands", []):
                 if not _read_only(command, profile):
                     errors.append(f"{name}: '{command}' is not a read-only check command")
+                errors += [f"{name}: {e}" for e in _value_errors(command)]
             continue  # read-only: no rollback or dangerous-command checks needed
 
         for command in change.get("verify", []):
@@ -101,7 +108,55 @@ def validate(plan: dict, kb) -> dict:
                         errors.append(f"{name}: interface '{kind}{number}' does not exist "
                                       f"(it has: {', '.join(known)})")
 
+        # Syntax (pre-validation): the commands, and the rollback (it is sent too), must be
+        # commands the vendor knows, with possible values. A blocked or check command was
+        # already refused above with a clearer reason, so it is skipped here.
+        for command in change.get("commands", []) + change.get("rollback", []):
+            line = command.strip().lower()
+            if any(re.search(p, line) for p, _ in profile.blocked) or re.search(profile.check_commands, line):
+                continue
+            errors += [f"{name}: {e}" for e in _syntax_errors(command, profile)]
+
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _syntax_errors(command: str, profile) -> list[str]:
+    """Pre-validation of one config command: known command + possible values."""
+    line = command.strip().lower()
+    without_no = re.sub(r"^no\s+", "", line)
+    if profile.config_commands and not re.search(profile.config_commands, without_no):
+        return [f"'{command}' is not a known {profile.description} command "
+                "(check the spelling and write the command in full)"]
+    return _value_errors(command)
+
+
+def _value_errors(command: str) -> list[str]:
+    """Values that can't be right: IP parts above 255, broken masks, a route's network
+    with host bits, VLAN numbers outside 1-4094."""
+    errors = []
+    line = command.strip().lower()
+    for ip in re.findall(r"\b\d+\.\d+\.\d+\.\d+\b", line):
+        if any(int(part) > 255 for part in ip.split(".")):
+            errors.append(f"'{command}': {ip} is not a valid IP address")
+    if errors:
+        return errors
+    # "ip address 10.0.0.1 255.255.255.0" / "ip route 192.168.3.0 255.255.255.0 10.0.0.2"
+    match = re.match(r"^(?:no\s+)?ip (address|route) (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)", line)
+    if match:
+        kind, address, mask = match.groups()
+        try:
+            ipaddress.IPv4Network(f"0.0.0.0/{mask}")
+        except ValueError:
+            return [f"'{command}': {mask} is not a valid mask"]
+        if kind == "route":
+            network = ipaddress.IPv4Network(f"{address}/{mask}", strict=False)
+            if str(network.network_address) != address:
+                errors.append(f"'{command}': {address} is not a network address for mask {mask} "
+                              f"(use {network.network_address})")
+    vlan = re.match(r"^(?:no\s+)?vlan (\d+)$", line)
+    if vlan and not 1 <= int(vlan[1]) <= 4094:
+        errors.append(f"'{command}': VLAN {vlan[1]} is outside 1-4094")
+    return errors
 
 
 def _read_only(command: str, profile) -> bool:

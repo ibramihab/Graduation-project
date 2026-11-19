@@ -70,7 +70,9 @@ Use [] for "check" steps.
 
 Rules:
 - Only use devices from the list. Use each device's exact "name".
-- Write commands in the CLI syntax of the device's "vendor" (see the vendor notes below).
+- Write commands in the CLI syntax of the device's "vendor" (see the vendor notes below),
+  each command in FULL (never abbreviations like "sh", "int", "conf t"): the syntax
+  check refuses commands it doesn't know.
 - Use the real interface names and IP addresses from "interfaces" below.
   To reach a device, ping one of ITS interface IPs (not the 192.168.x management IP,
   unless the user asks for management).

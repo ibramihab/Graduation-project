@@ -3,7 +3,7 @@
 All vendor-specific details live in one file per vendor (cisco_ios.py, huawei.py...),
 and every layer reads them from there:
     intent      -> ai_hints (rules + examples for the AI), wrapper_lines (lines to clean)
-    validation  -> blocked, warn, check_commands
+    validation  -> blocked, warn, check_commands, config_commands (syntax)
     drivers     -> netmiko_type, show_config, show_interfaces, parse_interfaces,
                    error_markers, neighbors
     control     -> verify_failed (how a failed post-validation check looks)
@@ -45,6 +45,10 @@ class VendorProfile:
     check_commands: str = r"^(show|ping|traceroute)\b"  # regex: read-only commands
     blocked: list[tuple[str, str]] = field(default_factory=list)  # (regex, reason): never allowed
     warn: list[tuple[str, str]] = field(default_factory=list)     # (regex, reason): look twice
+    # Syntax (pre-validation): regex of the config commands this vendor knows, matched on
+    # each command without a leading "no". Not matching = unknown or misspelled command.
+    # "" = no syntax list yet for this vendor: the check is skipped.
+    config_commands: str = ""
 
     # ---- control (post-validation: did the change really work?) ----
     # regex, searched in the lowercase output of a "verify" command: a match = FAILED.

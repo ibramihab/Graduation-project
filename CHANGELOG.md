@@ -7,6 +7,17 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Syntax check (pre-validation)
+- 🟢 The validation refuses commands that can't work before they reach a device: unknown or misspelled
+  commands (`ip rout`, `vlna 10`) on vendors with a known-command list (Cisco IOS and simulated for now), and
+  impossible values on every vendor: an IP part above 255, a broken mask (`255.0.255.0`), a route whose network
+  has host bits (`ip route 192.168.3.1 255.255.255.0`), a VLAN outside 1-4094. The rollback is checked too.
+  The AI gets the error and a second try, like the other checks. The prompt now asks for commands in full.
+  ⚠️ Contract **addition**: `config_commands` in `VendorProfile` (empty = no list, check skipped).
+  If a real Cisco command is refused, add its first word to `config_commands` in `ibn/vendors/cisco_ios.py`.
+  Files: `ibn/validation/validator.py`, `ibn/vendors/base.py`, `ibn/vendors/cisco_ios.py`,
+  `ibn/intent/translator.py`, `tests/test_ibn.py`.
+
 ### Supervisor's requests: phased intent exam, post-validation, the AI asks when information is missing
 - 🟢 **The AI asks instead of guessing** (idea 2): if a request misses information ("configure static routing":
   which router? which network?), the AI returns no steps and a summary starting with `QUESTION:`. `translate()`
