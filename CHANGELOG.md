@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Removed: "Set the IP" requests written by the program
+- 🔴 `intent/translator.py` is back to how it is on `main`: no more program-written plans for
+  "Set the IP of interface ... on ... to ..." (English only, one wording, and it bypassed the AI, which stays the
+  base of the project). The plan field `written_by` is gone, and `pipeline.py` no longer checks it. Every request
+  goes to the AI again; the validation checks are unchanged.
+
 ### Switch commands on a router are refused
 - 🟢 `validation/validator.py`: `switchport ...`, `vlan 10`, `spanning-tree ...` or `interface Vlan10` on a router is
   an error (a real router answers "% Invalid input", so the plan would fail halfway). A router = named like one
