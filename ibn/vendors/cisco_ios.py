@@ -46,20 +46,44 @@ Examples:
 Request: "create vlan 20 named Finance on SW3"
 {"summary": "Create VLAN 20 named Finance on SW3",
  "changes": [{"device": "SW3", "type": "config",
-              "commands": ["vlan 20", "name Finance"], "rollback": ["no vlan 20"]}]}
+              "commands": ["vlan 20", "name Finance"], "rollback": ["no vlan 20"],
+              "verify": ["show vlan brief"]}]}
+
+Request: "create vlan 30 on the switch connected to R2"   (Links: R1 - R2, R2 - SW3)
+{"summary": "Create VLAN 30 on SW3 (the switch connected to R2)",
+ "changes": [{"device": "SW3", "type": "config",
+              "commands": ["vlan 30"], "rollback": ["no vlan 30"],
+              "verify": ["show vlan brief"]}]}
+
+Request: "add a static route on R1 to 192.168.3.0/24 via 10.1.2.2"
+{"summary": "Static route on R1 to 192.168.3.0/24 via 10.1.2.2",
+ "changes": [{"device": "R1", "type": "config",
+              "commands": ["ip route 192.168.3.0 255.255.255.0 10.1.2.2"],
+              "rollback": ["no ip route 192.168.3.0 255.255.255.0 10.1.2.2"],
+              "verify": ["show ip route static"]}]}
+
+Request: "enable OSPF area 0 on R1 and R2"   (R1: Ethernet0/0 10.1.2.1 | R2: Ethernet0/0 10.1.2.2, Ethernet0/1 10.2.3.2, all /24)
+{"summary": "OSPF process 1, area 0, on the connected networks of R1 and R2",
+ "changes": [{"device": "R1", "type": "config",
+              "commands": ["router ospf 1", "network 10.1.2.0 0.0.0.255 area 0"],
+              "rollback": ["no router ospf 1"], "verify": []},
+             {"device": "R2", "type": "config",
+              "commands": ["router ospf 1", "network 10.1.2.0 0.0.0.255 area 0",
+                           "network 10.2.3.0 0.0.0.255 area 0"],
+              "rollback": ["no router ospf 1"], "verify": ["show ip ospf neighbor"]}]}
 
 Request: "ping from R1 to R3"   (R3 has interface Ethernet0/1 10.2.3.3)
 {"summary": "Ping R3's interface 10.2.3.3 from R1",
  "changes": [{"device": "R1", "type": "check",
-              "commands": ["ping 10.2.3.3"], "rollback": []}]}
+              "commands": ["ping 10.2.3.3"], "rollback": [], "verify": []}]}
 
 Request: "add loopback 5 with ip 5.5.5.5/32 on R2 and show the interfaces"
 {"summary": "Create Loopback5 on R2 then show interfaces",
  "changes": [{"device": "R2", "type": "config",
               "commands": ["interface Loopback5", "ip address 5.5.5.5 255.255.255.255"],
-              "rollback": ["no interface Loopback5"]},
+              "rollback": ["no interface Loopback5"], "verify": ["ping 5.5.5.5"]},
              {"device": "R2", "type": "check",
-              "commands": ["show ip interface brief"], "rollback": []}]}
+              "commands": ["show ip interface brief"], "rollback": [], "verify": []}]}
 
 Request: "stop the network 10.0.1.0/24 from reaching R2"   (R2 receives it on Ethernet0/0)
 {"summary": "On R2, deny traffic from 10.0.1.0/24 coming in on Ethernet0/0",
@@ -72,5 +96,6 @@ Request: "stop the network 10.0.1.0/24 from reaching R2"   (R2 receives it on Et
               "rollback": ["interface Ethernet0/0",
                            "no ip access-group BLOCK-10-0-1 in",
                            "exit",
-                           "no ip access-list extended BLOCK-10-0-1"]}]}""",
+                           "no ip access-list extended BLOCK-10-0-1"],
+              "verify": ["show ip access-lists BLOCK-10-0-1"]}]}""",
 )

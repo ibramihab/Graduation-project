@@ -456,3 +456,142 @@ def test_interfaces_can_be_typed_for_a_device(kb):
     assert "interfaces" not in kb.get_device("R9")  # box emptied in Edit = no interfaces
     client.post("/api/devices", json={"name": "R9", "ip": "10.9.9.9", "vendor": "simulated"})  # no box: nothing changes
     assert "interfaces" not in kb.get_device("R9")
+
+
+# ---- Idea 2: missing information -> the AI asks a question instead of guessing ----
+
+def test_missing_information_becomes_a_question(kb):
+    llm = FakeLLM({"summary": "QUESTION: On which router, and to which network?", "changes": []})
+    plan = pipeline.propose("configure static routing", kb, llm)
+    assert plan["question"] == "On which router, and to which network?"
+    assert not plan["validation"]["ok"] and plan["attempts"] == 1  # nothing to apply, no retry
+    assert not pipeline.approve(plan["id"], kb)["success"]  # a question can never be applied
+
+
+def test_a_normal_refusal_is_not_a_question(kb):
+    plan = pipeline.propose("x", kb, FakeLLM({"summary": "SW9 does not exist", "changes": []}))
+    assert "question" not in plan
+
+
+def test_question_reaches_the_web_page(kb):
+    client = create_app(kb, FakeLLM({"summary": "QUESTION: Which VLAN number?", "changes": []})).test_client()
+    assert client.post("/api/intent", json={"text": "create a vlan"}).json["question"] == "Which VLAN number?"
+
+
+# ---- Idea 4: post-validation ("verify" commands run after applying) ----
+
+def verified(device, commands, rollback, verify):
+    return {**change(device, commands, rollback), "verify": verify}
+
+
+def test_verify_passes_when_the_intent_really_happened(kb):
+    llm = FakeLLM({"summary": "route", "changes": [
+        verified("R1", ["ip route 10.9.0.0 255.255.0.0 10.0.0.2"], ["no ip route 10.9.0.0 255.255.0.0 10.0.0.2"],
+                 ["ping 10.9.0.1"])]})
+    result = pipeline.approve(pipeline.propose("route", kb, llm)["id"], kb)
+    assert result["success"]
+    assert [(r["device"], r["status"]) for r in result["results"]] == [("R1", "applied"), ("R1", "verified")]
+
+
+def test_failed_verify_rolls_everything_back(kb):
+    # The simulated device never answers a ping to 192.0.2.x: the intent was not reached.
+    llm = FakeLLM({"summary": "x", "changes": [
+        verified("SW1", ["vlan 10"], ["no vlan 10"], []),
+        verified("R1", ["ip route 192.0.2.0 255.255.255.0 10.0.0.2"],
+                 ["no ip route 192.0.2.0 255.255.255.0 10.0.0.2"], ["ping 192.0.2.1"])]})
+    result = pipeline.approve(pipeline.propose("x", kb, llm)["id"], kb)
+    assert not result["success"]
+    assert [(r["device"], r["status"]) for r in result["results"]] == [
+        ("SW1", "applied"), ("R1", "applied"), ("R1", "verify failed"),
+        ("R1", "rolled back"), ("SW1", "rolled back")]
+    assert FAKE_CONFIGS["SW1"][-1] == "no vlan 10"
+    assert kb.get_history("R1")[0]["success"] is False
+
+
+def test_verify_commands_must_be_read_only(kb):
+    plan = {"changes": [verified("SW1", ["vlan 10"], ["no vlan 10"], ["vlan 99"])]}
+    errors = validate(plan, kb)["errors"]
+    assert any("verify command 'vlan 99'" in e for e in errors)
+
+
+def test_translate_cleans_verify_and_only_keeps_it_on_config_steps(kb):
+    from ibn.intent import translate
+    plan = translate("x", kb.list_devices(), FakeLLM({"summary": "x", "changes": [
+        {**change("SW1", ["vlan 10"], ["no vlan 10"]), "verify": ["show vlan brief", "end", ""]},
+        {**change("R1", ["ping 10.0.0.2"], [], "check"), "verify": ["show run"]},
+        change("R1", ["hostname R1"], ["hostname R1"])]}))  # the AI forgot "verify"
+    assert [c["verify"] for c in plan["changes"]] == [["show vlan brief"], [], []]
+
+
+def test_vendor_knows_what_a_failed_ping_looks_like():
+    from ibn.control.controller import _looks_failed
+    cisco, huawei = {"vendor": "cisco_ios"}, {"vendor": "huawei"}
+    assert _looks_failed("Success rate is 0 percent (0/5)", cisco)
+    assert not _looks_failed("Success rate is 80 percent (4/5)", cisco)
+    assert _looks_failed("5 packet(s) transmitted\n100.00% packet loss", huawei)
+    assert _looks_failed("% Invalid input detected", cisco)  # a rejected verify command
+
+
+# ---- Idea 5: negative tests (wrong requests must be refused, with a clear reason) ----
+
+def test_negative_dangerous_command_hidden_in_the_rollback(kb):
+    errors = validate({"changes": [change("R1", ["hostname R1"], ["reload"])]}, kb)["errors"]
+    assert errors == ["R1: 'reload' is blocked (restarts the device)"]
+
+
+def test_negative_device_that_is_down(kb):
+    kb.update_device("SW1", state="down")
+    errors = validate({"changes": [change("SW1", ["vlan 10"], ["no vlan 10"])]}, kb)["errors"]
+    assert errors == ["SW1: device is down (not answering ping)"]
+
+
+def test_negative_unknown_vendor(kb):
+    kb.add_device({"name": "host-9", "ip": "10.0.0.9", "vendor": "unknown", "state": "up"})
+    errors = validate({"changes": [change("host-9", ["vlan 10"], ["no vlan 10"])]}, kb)["errors"]
+    assert errors == ["host-9: no driver for vendor 'unknown'"]
+
+
+def test_negative_huawei_reboot_and_user_deletion(tmp_path):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    kb.add_device({"name": "HW1", "ip": "10.0.0.1", "vendor": "huawei", "state": "up"})
+    for command in ["reboot", "undo local-user admin"]:
+        assert not validate({"changes": [change("HW1", [command], ["x"])]}, kb)["ok"], command
+
+
+def test_negative_empty_plan_is_refused(kb):
+    assert validate({"summary": "nothing", "changes": []}, kb)["errors"] == ["The plan has no changes. nothing"]
+
+
+# ---- Idea 3: the phased exam for the AI (tests/intents.json + ibn/intent/evaluate.py) ----
+
+def test_exam_file_is_valid():
+    from ibn.intent.evaluate import load_exam
+    exam = load_exam()
+    known = {"devices", "commands", "type", "verify", "question", "rejected"}
+    assert {case["phase"] for case in exam["cases"]} == {1, 2, 3}
+    for case in exam["cases"]:
+        assert case["request"] and set(case["expect"]) <= known, case
+    assert any(case["expect"].get("rejected") for case in exam["cases"])  # it has negative tests
+
+
+def test_exam_scores_each_phase():
+    from ibn.intent.evaluate import load_exam, run_exam, scores
+
+    class ExamLLM:
+        """Answers 2 phase-1 cases right, 1 wrong; asks the right question in phase 3."""
+        def ask_json(self, system, user, schema):
+            if user.startswith("Create VLAN 10 named Sales on SW1"):
+                return {"summary": "x", "changes": [{**change("SW1", ["vlan 10", "name Sales"], ["no vlan 10"]),
+                                                     "verify": ["show vlan brief"]}]}
+            if user.startswith("Restart R1"):
+                return {"summary": "x", "changes": [change("R1", ["reload"], [])]}  # refused by validation
+            if user.startswith("configure static routing"):
+                return {"summary": "QUESTION: Which router?", "changes": []}
+            return {"summary": "x", "changes": [change("R9", ["?"], ["?"])]}  # wrong answer
+
+    exam = load_exam()
+    exam["cases"] = [c for c in exam["cases"] if c["request"] in
+                     ("Create VLAN 10 named Sales on SW1", "Restart R1", "Ping R3 from R1", "configure static routing")]
+    results = run_exam(ExamLLM(), exam)
+    assert [r["passed"] for r in results] == [True, False, True, True]
+    assert scores(results) == {1: (2, 3), 3: (1, 1)}

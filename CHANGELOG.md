@@ -7,6 +7,25 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Supervisor's requests: phased intent exam, post-validation, the AI asks when information is missing
+- 🟢 **The AI asks instead of guessing** (idea 2): if a request misses information ("configure static routing":
+  which router? which network?), the AI returns no steps and a summary starting with `QUESTION:`. `translate()`
+  puts it in `plan["question"]`; the page shows it in blue. Files: `ibn/intent/translator.py`, `index.html`.
+- 🟢 **Phased exam for the AI** (idea 3): `tests/intents.json` = 20 requests in 3 phases (simple, several
+  steps/devices, scenarios) with the expected answer, including negative cases. `python -m ibn.intent.evaluate`
+  (or `--phase 1`) asks the AI from `.env` and prints a score per phase. Nothing is sent to devices.
+  Files: `tests/intents.json`, `ibn/intent/evaluate.py`.
+- 🟢 **Post-validation** (idea 4): each config step can have `"verify"` = read-only commands (ping, show) that the
+  control layer runs **after** everything is applied. If one fails (ping with no reply, rejected command), the
+  intent was not reached, so **everything is rolled back**. Statuses: `verified` / `verify failed`.
+  ⚠️ Contract **addition** (nothing renamed or removed): `"verify"` in `PLAN_SCHEMA`, `verify_failed` in
+  `VendorProfile`. Files: `translator.py`, `validator.py` (verify must be read-only), `controller.py`,
+  `vendors/base.py`, `drivers/simulated.py` (a ping answers, except to `192.0.2.x`), `index.html`.
+- 🟡 Smarter prompt (ideas 1-2 of the list): a device can be described ("the switch connected to R2"), several
+  requests in one sentence become steps in order. New Cisco examples: static route, OSPF on two routers,
+  device described by its link. File: `ibn/vendors/cisco_ios.py`.
+- 🟢 More negative tests (idea 5) and tests for all of the above: `tests/test_ibn.py`.
+
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices
   Find links can't read (simulated or hand-drawn labs). The AI needs them to plan routing. Short names become

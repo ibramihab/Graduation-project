@@ -7,7 +7,8 @@ The AI can make mistakes, so we never trust it blindly. Checks:
   4. there are commands and a rollback
   5. no dangerous commands (the vendor's "blocked" list in ibn/vendors/)
   6. "check" steps only contain read-only commands (ping, show, display...), and
-     "config" steps don't contain them (they only work outside config mode)
+     "config" steps don't contain them (they only work outside config mode).
+     The "verify" commands (post-validation, run after applying) must be read-only too.
   7. physical interfaces in the commands (Ethernet0/0, Gi0/1...) really exist
      on the device (we know them from "Find links & IPs")
   8. a risky change (shutdown, ACL...) on a device that is a single point of failure
@@ -59,12 +60,13 @@ def validate(plan: dict, kb) -> dict:
 
         if change.get("type") == "check":
             for command in change.get("commands", []):
-                line = command.strip().lower()
-                # "show ... | redirect flash:x" would write a file, so pipes like that are refused
-                if not re.search(profile.check_commands, line) or re.search(r"\|\s*(redirect|tee|append)", line):
+                if not _read_only(command, profile):
                     errors.append(f"{name}: '{command}' is not a read-only check command")
             continue  # read-only: no rollback or dangerous-command checks needed
 
+        for command in change.get("verify", []):
+            if not _read_only(command, profile):
+                errors.append(f"{name}: verify command '{command}' is not a read-only check command")
         if not change.get("rollback"):
             warnings.append(f"{name}: no rollback commands, a failure can't be undone automatically")
         for command in change.get("commands", []):
@@ -93,13 +95,20 @@ def validate(plan: dict, kb) -> dict:
         # Interface names must exist on the device (if we know its interfaces).
         known = [i.split()[0] for i in device.get("interfaces") or []]
         if known:
-            for command in change.get("commands", []) + change.get("rollback", []):
+            for command in change.get("commands", []) + change.get("rollback", []) + change.get("verify", []):
                 for kind, number in PHYSICAL_INTERFACE.findall(command):
                     if not _interface_exists(kind, number, known):
                         errors.append(f"{name}: interface '{kind}{number}' does not exist "
                                       f"(it has: {', '.join(known)})")
 
     return {"ok": not errors, "errors": errors, "warnings": warnings}
+
+
+def _read_only(command: str, profile) -> bool:
+    """True for the vendor's check commands (show, ping...).
+    "show ... | redirect flash:x" would write a file, so pipes like that are refused."""
+    line = command.strip().lower()
+    return bool(re.search(profile.check_commands, line)) and not re.search(r"\|\s*(redirect|tee|append)", line)
 
 
 def _interface_exists(kind: str, number: str, known: list[str]) -> bool:

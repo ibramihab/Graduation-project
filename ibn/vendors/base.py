@@ -6,6 +6,7 @@ and every layer reads them from there:
     validation  -> blocked, warn, check_commands
     drivers     -> netmiko_type, show_config, show_interfaces, parse_interfaces,
                    error_markers, neighbors
+    control     -> verify_failed (how a failed post-validation check looks)
 
 To add a vendor: copy one of the files in this folder, change the values, and add it
 to the list in vendors/__init__.py. Nothing else in the project needs to change.
@@ -44,6 +45,14 @@ class VendorProfile:
     check_commands: str = r"^(show|ping|traceroute)\b"  # regex: read-only commands
     blocked: list[tuple[str, str]] = field(default_factory=list)  # (regex, reason): never allowed
     warn: list[tuple[str, str]] = field(default_factory=list)     # (regex, reason): look twice
+
+    # ---- control (post-validation: did the change really work?) ----
+    # regex, searched in the lowercase output of a "verify" command: a match = FAILED.
+    # The defaults catch a ping that got no reply on every common vendor:
+    #   Cisco "Success rate is 0 percent", Huawei/Nexus/Linux "100% packet loss",
+    #   MikroTik "packet-loss=100%".
+    verify_failed: list[str] = field(default_factory=lambda: [
+        r"success rate is 0 percent", r"\b100(\.0+)?% packet loss", r"packet-loss=100%"])
 
     # ---- intent (the AI) ----
     wrapper_lines: set[str] = field(default_factory=set)  # added by the driver itself: removed
