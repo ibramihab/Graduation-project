@@ -562,41 +562,6 @@ def test_negative_empty_plan_is_refused(kb):
     assert validate({"summary": "nothing", "changes": []}, kb)["errors"] == ["The plan has no changes. nothing"]
 
 
-# ---- Idea 3: the phased exam for the AI (tests/intents.json + ibn/intent/evaluate.py) ----
-
-def test_exam_file_is_valid():
-    from ibn.intent.evaluate import load_exam
-    exam = load_exam()
-    known = {"devices", "commands", "type", "verify", "question", "rejected"}
-    assert {case["phase"] for case in exam["cases"]} == {1, 2, 3}
-    for case in exam["cases"]:
-        assert case["request"] and set(case["expect"]) <= known, case
-    assert any(case["expect"].get("rejected") for case in exam["cases"])  # it has negative tests
-
-
-def test_exam_scores_each_phase():
-    from ibn.intent.evaluate import load_exam, run_exam, scores
-
-    class ExamLLM:
-        """Answers 2 phase-1 cases right, 1 wrong; asks the right question in phase 3."""
-        def ask_json(self, system, user, schema):
-            if user.startswith("Create VLAN 10 named Sales on SW1"):
-                return {"summary": "x", "changes": [{**change("SW1", ["vlan 10", "name Sales"], ["no vlan 10"]),
-                                                     "verify": ["show vlan brief"]}]}
-            if user.startswith("Restart R1"):
-                return {"summary": "x", "changes": [change("R1", ["reload"], [])]}  # refused by validation
-            if user.startswith("configure static routing"):
-                return {"summary": "QUESTION: Which router?", "changes": []}
-            return {"summary": "x", "changes": [change("R9", ["?"], ["?"])]}  # wrong answer
-
-    exam = load_exam()
-    exam["cases"] = [c for c in exam["cases"] if c["request"] in
-                     ("Create VLAN 10 named Sales on SW1", "Restart R1", "Ping R3 from R1", "configure static routing")]
-    results = run_exam(ExamLLM(), exam)
-    assert [r["passed"] for r in results] == [True, False, True, True]
-    assert scores(results) == {1: (2, 3), 3: (1, 1)}
-
-
 # ---- Syntax (pre-validation): known commands and possible values ----
 
 def syntax_errors(kb, commands, rollback=("no description",), type="config"):

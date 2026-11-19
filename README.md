@@ -100,16 +100,6 @@ pytest
 
 Tests use a fake LLM and simulated devices, so they need no API key and no network.
 
-### Score the AI (phased exam)
-
-```bash
-python -m ibn.intent.evaluate            # all phases
-python -m ibn.intent.evaluate --phase 1  # only phase 1
-```
-
-Asks the AI from your `.env` the 20 requests in `tests/intents.json` (phase 1 simple, phase 2 several
-steps/devices, phase 3 scenarios + negative tests) and prints a score per phase. Nothing is sent to devices.
-
 ---
 
 ## 3. The knowledge base (graph database)

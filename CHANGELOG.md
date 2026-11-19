@@ -7,6 +7,10 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Phased exam removed
+- 🔴 Removed the phased exam for the AI (`ibn/intent/evaluate.py`, `tests/intents.json`, its 2 tests and its
+  README section), as asked. Everything else stays: questions, post-validation, syntax check, Cisco examples.
+
 ### Syntax check (pre-validation)
 - 🟢 The validation refuses commands that can't work before they reach a device: unknown or misspelled
   commands (`ip rout`, `vlna 10`) on vendors with a known-command list (Cisco IOS and simulated for now), and
