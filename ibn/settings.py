@@ -26,6 +26,14 @@ RAG_TOP_K = int(os.getenv("RAG_TOP_K", "3"))             # how many chunks per s
 # --- Knowledge base: devices, links and history, saved in one JSON file ---
 KB_FILE = os.getenv("KB_FILE", "data/knowledge.json")
 
+# --- Validation: Batfish pre-deployment analysis (optional) ---
+# Batfish server address, e.g. "localhost" (run it with: docker run -d -p 9996:9996 batfish/batfish).
+# Empty = Batfish is off and the validation works as before.
+BATFISH_HOST = os.getenv("BATFISH_HOST", "")
+BATFISH_NETWORK = os.getenv("BATFISH_NETWORK", "ibn")
+# Folder of baseline configs "<device name>.cfg", for devices without a backup in the knowledge base
+BATFISH_CONFIG_DIR = os.getenv("BATFISH_CONFIG_DIR", "")
+
 # --- Infrastructure ---
 # Default login used for devices (one shared account keeps things simple).
 DEVICE_USERNAME = os.getenv("DEVICE_USERNAME", "admin")

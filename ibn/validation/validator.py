@@ -12,12 +12,22 @@ The AI can make mistakes, so we never trust it blindly. Checks:
      on the device (we know them from "Find links & IPs")
   8. a risky change (shutdown, ACL...) on a device that is a single point of failure
      gets an extra warning saying which parts of the network would be cut off
+Advanced checks (each in its own file, they simulate the change on a config model):
+  9. rollback.py      - the rollback really undoes every change (and damages nothing)
+ 10. conflicts.py     - VLAN / IP / interface conflicts with the current network
+ 11. dependencies.py  - missing prerequisites (VLANs, port modes, ACLs, next hops...)
+ 12. risk.py          - a risk score 0-100 (LOW / MEDIUM / HIGH / CRITICAL) with reasons
+ 13. batfish_check.py - (optional) Batfish compares the network before/after the plan:
+                        config validity, routing, loops, reachability, ACLs (Cisco IOS)
 
-Result: {"ok": bool, "errors": [...], "warnings": [...]}
-Errors block the change. Warnings are shown to the user before they approve.
+Result: {"ok": bool, "errors": [...], "warnings": [...],
+         "risk": {"score": 0-100, "level": "LOW", "reasons": [...]},
+         "batfish": {"status": "PASS" | "WARNING" | "FAIL" | "SKIPPED", "results": [...]}}
+Errors block the change. Warnings and the risk are shown to the user before they approve
+(a CRITICAL risk does not block: the user decides).
 
 Ideas for later: test the config in a lab (GNS3/EVE-NG) or with Batfish,
-check for IP conflicts using the knowledge base, ask a second LLM to review.
+ask a second LLM to review.
 """
 import re
 
@@ -25,6 +35,12 @@ from .. import settings
 from ..infrastructure.drivers import DRIVERS
 from ..knowledge.graph_analysis import impact
 from ..vendors import get_vendor
+from .batfish_check import analyze as batfish_analyze
+from .conflicts import check_conflicts, management_interface_changed
+from .dependencies import check_dependencies
+from .risk import assess
+from .rollback import check_rollback
+from .state import build_steps
 
 # A physical interface written in a command: "Ethernet0/0", "Gi0/1", "fa 0/2", "Serial0/0/0".
 # Needs a "/" in the number, so it never matches Loopback5, Tunnel1, Vlan10 or IP addresses.
@@ -38,6 +54,7 @@ ALIASES = {"ge": "gigabitethernet"}
 
 def validate(plan: dict, kb) -> dict:
     errors, warnings = [], []
+    ready = []  # config changes that passed the basic checks: (change, device, profile)
 
     if not plan.get("changes"):
         errors.append("The plan has no changes. " + plan.get("summary", ""))
@@ -69,6 +86,7 @@ def validate(plan: dict, kb) -> dict:
                     errors.append(f"{name}: '{command}' is not a read-only check command")
             continue  # read-only: no rollback or dangerous-command checks needed
 
+        ready.append((change, device, profile))
         if not change.get("rollback"):
             warnings.append(f"{name}: no rollback commands, a failure can't be undone automatically")
         for command in change.get("commands", []):
@@ -103,7 +121,42 @@ def validate(plan: dict, kb) -> dict:
                         errors.append(f"{name}: interface '{kind}{number}' does not exist "
                                       f"(it has: {', '.join(known)})")
 
-    return {"ok": not errors, "errors": errors, "warnings": warnings}
+    findings = _advanced_checks(ready, kb, errors, warnings)
+    batfish = _batfish(plan, kb, errors, warnings, findings)
+    risk = assess(plan, kb, findings)
+    return {"ok": not errors, "errors": errors, "warnings": warnings, "risk": risk, "batfish": batfish}
+
+
+def _batfish(plan, kb, errors, warnings, findings) -> dict:
+    """Pre-deployment analysis with Batfish (optional, see batfish_check.py).
+    FAIL -> error (blocks the plan), WARNING -> warning, PASS -> nothing to add."""
+    if errors:  # the plan is already rejected: don't spend time on the full analysis
+        return {"status": "SKIPPED", "results": [], "reason": "the plan already has errors"}
+    result = batfish_analyze(plan, kb)
+    for item in result["results"]:
+        if item["status"] == "FAIL":
+            errors.append(f"Batfish ({item['check']}): {item['message']}")
+        elif item["status"] == "WARNING":
+            warnings.append(f"Batfish ({item['check']}): {item['message']}")
+    findings["batfish_errors"] = sum(r["status"] == "FAIL" for r in result["results"])
+    findings["batfish_warnings"] = sum(r["status"] == "WARNING" for r in result["results"])
+    return result
+
+
+def _advanced_checks(ready, kb, errors, warnings) -> dict:
+    """Rollback, conflict and dependency checks. Returns how many problems each found
+    (the risk score uses these counts)."""
+    findings = {"missing_rollback": sum(1 for c, _, _ in ready if not c.get("rollback"))}
+    steps = build_steps(ready, kb)
+    findings["cut_access"] = sorted({s.name for s in steps if management_interface_changed(s)})
+    for kind, check in (("rollback", check_rollback),
+                        ("conflict", lambda s: check_conflicts(s, kb)),
+                        ("dependency", lambda s: check_dependencies(s, kb))):
+        new_errors, new_warnings = check(steps)
+        errors += [e for e in new_errors if e not in errors]
+        warnings += [w for w in new_warnings if w not in warnings]
+        findings[f"{kind}_errors"], findings[f"{kind}_warnings"] = len(new_errors), len(new_warnings)
+    return findings
 
 
 def _interface_exists(kind: str, number: str, known: list[str]) -> bool:

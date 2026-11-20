@@ -2,6 +2,8 @@
 Run them with:  pytest
 """
 
+import os
+
 import pytest
 
 from ibn import pipeline
@@ -148,7 +150,7 @@ def test_happy_path(kb):
 def test_failure_rolls_back_every_device(kb):
     llm = FakeLLM({"summary": "x", "changes": [
         change("R1", ["ip route 0.0.0.0 0.0.0.0 10.0.0.254"], ["no ip route 0.0.0.0 0.0.0.0 10.0.0.254"]),
-        change("SW1", ["this is invalid"], ["undo sw1"]),
+        change("SW1", ["this is invalid"], ["no sw1"]),  # Cisco-like: "no", not "undo"
     ]})
     plan = pipeline.propose("break it", kb, llm)
     result = pipeline.approve(plan["id"], kb)
@@ -661,3 +663,239 @@ def test_the_cisco_notes_are_found_for_matching_requests(monkeypatch):
     monkeypatch.setattr(settings, "RAG_TOP_K", 2)
     assert "[ospf]" in retrieve("advertise a network in ospf with the wildcard mask", ["cisco_ios"])
     assert "[acl]" in retrieve("deny access list permit ip any any", ["cisco_ios"])
+
+
+# ---------------- advanced validation: rollback, conflicts, prerequisites, risk ----------------
+SW1_BACKUP = ("hostname SW1\nvlan 10\n name HR\n!\nvlan 20\n name Sales\n!\n"
+              "interface Ethernet0/1\n switchport mode trunk\n!")
+
+
+def messages(result):
+    return " | ".join(result["errors"] + result["warnings"])
+
+
+def test_rollback_must_undo_the_change(kb):
+    good = {"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}
+    assert validate(good, kb)["ok"] and not validate(good, kb)["warnings"]
+    incomplete = {"changes": [change("R1", ["interface Loopback5", "description x"], ["no description"])]}
+    assert "rollback does not remove 'interface Loopback5'" in messages(validate(incomplete, kb))
+
+
+def test_rollback_must_not_delete_what_existed_before(kb):
+    kb.update_device("SW1", last_config=SW1_BACKUP)
+    bad = {"changes": [change("SW1", ["vlan 10", "name Finance"], ["no vlan 10"])]}
+    result = validate(bad, kb)
+    assert not result["ok"] and "existed BEFORE this change" in result["errors"][0]
+    good = {"changes": [change("SW1", ["vlan 10", "name Finance"], ["vlan 10", "name HR"])]}
+    assert validate(good, kb)["ok"]
+
+
+def test_rollback_must_restore_a_replaced_ip(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/1 10.1.1.1"])
+    commands = ["interface Ethernet0/1", "ip address 10.1.9.1 255.255.255.0"]
+    lazy = {"changes": [change("R1", commands, ["interface Ethernet0/1", "no ip address"])]}
+    assert "does not restore 'ip address 10.1.1.1'" in messages(validate(lazy, kb))
+    restore = ["interface Ethernet0/1", "ip address 10.1.1.1 255.255.255.0"]
+    assert "restore" not in messages(validate({"changes": [change("R1", commands, restore)]}, kb))
+
+
+def test_rollback_follows_vendor_rules(kb):
+    plan = {"changes": [change("R1", ["interface Ethernet0/1", "description x"], ["no interface Ethernet0/1"])]}
+    assert "physical port" in validate(plan, kb)["errors"][0]
+    plan = {"changes": [change("R1", ["vlan 30"], ["undo vlan 30"])]}  # Cisco-like says "no"
+    assert "uses 'undo'" in validate(plan, kb)["errors"][0]
+    kb.add_device({"name": "FW1", "ip": "10.0.0.5", "vendor": "fortigate", "state": "up"})
+    plan = {"changes": [change("FW1", ["config firewall policy", "edit 1001", "set action deny", "next", "end"],
+                               ["config firewall policy", "delete 1001"])]}  # block never closed
+    assert "closes 0 with 'end'" in validate(plan, kb)["errors"][0]
+
+
+def test_vlan_conflicts(kb):
+    kb.update_device("SW1", last_config=SW1_BACKUP)
+    kb.add_device({"name": "SW3", "ip": "10.0.0.3", "vendor": "simulated", "state": "up",
+                   "last_config": "vlan 30\n name Finance\n!"})
+    same_again = {"changes": [change("SW1", ["vlan 20", "name Sales"], [])]}
+    assert "conflict" not in messages(validate(same_again, kb))  # existing and valid: not a conflict
+    rename = {"changes": [change("SW1", ["vlan 10", "name Sales"], ["vlan 10", "name HR"])]}
+    text = messages(validate(rename, kb))
+    assert "renames it to 'Sales'" in text and "already used by VLAN 20" in text
+    other_switch = {"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}
+    assert "VLAN 30 is called 'Finance' on SW3" in messages(validate(other_switch, kb))
+    assert "not valid" in validate({"changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}, kb)["errors"][0]
+    assert "default VLAN" in validate({"changes": [change("SW1", ["no vlan 1"], ["vlan 1"])]}, kb)["errors"][0]
+
+
+def test_ip_conflicts(kb):
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.1.2.1", "Ethernet0/1 10.1.1.1"])
+    kb.add_device({"name": "R2", "ip": "10.0.0.9", "vendor": "simulated", "state": "up",
+                   "interfaces": ["Ethernet0/0 10.1.2.2"]})
+
+    def loopback(address):
+        return {"changes": [change("R1", ["interface Loopback5", f"ip address {address}"],
+                                   ["no interface Loopback5"])]}
+    assert validate(loopback("5.5.5.5 255.255.255.255"), kb)["ok"]
+    assert "already used by R2 (Ethernet0/0)" in validate(loopback("10.1.2.2 255.255.255.255"), kb)["errors"][0]
+    assert "overlaps Ethernet0/0" in validate(loopback("10.1.2.9 255.255.255.0"), kb)["errors"][0]
+    assert "network address" in validate(loopback("10.9.9.0 255.255.255.0"), kb)["errors"][0]
+    assert "not a valid IP" in validate(loopback("10.9.9.1 255.0.255.0"), kb)["errors"][0]
+    same = {"changes": [change("R1", ["interface Ethernet0/1", "ip address 10.1.1.1 255.255.255.0"], [])]}
+    assert "conflict" not in messages(validate(same, kb))  # its own address again: fine
+
+
+def test_interface_conflicts(kb):
+    twice = {"changes": [change("SW1", ["interface e0/0", "description A"], ["interface e0/0", "no description"]),
+                         change("SW1", ["interface e0/0", "description B"], ["interface e0/0", "no description"])]}
+    assert "set twice in this plan" in validate(twice, kb)["errors"][0]
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2"])  # 10.0.0.2 = how we reach SW1
+    cut = {"changes": [change("SW1", ["interface Vlan1", "shutdown"], ["interface Vlan1", "no shutdown"])]}
+    result = validate(cut, kb)
+    assert "holds the management address" in messages(result)
+    assert "could cut the connection" in messages(result)
+
+
+def test_missing_prerequisites(kb):
+    kb.update_device("SW1", last_config=SW1_BACKUP)
+    trunk_port = {"changes": [change("SW1", ["interface Ethernet0/1", "switchport access vlan 40"],
+                                     ["interface Ethernet0/1", "no switchport access vlan"])]}
+    text = messages(validate(trunk_port, kb))
+    assert "is a trunk port" in text and "VLAN 40 (access VLAN of Ethernet0/1) does not exist" in text
+    good = {"changes": [change("SW1", ["interface Ethernet0/0", "switchport mode access", "switchport access vlan 20"],
+                               ["interface Ethernet0/0", "no switchport access vlan", "no switchport mode"])]}
+    assert not validate(good, kb)["warnings"]
+    acl = {"changes": [change("R1", ["interface Ethernet0/0", "ip access-group NOPE in"],
+                              ["interface Ethernet0/0", "no ip access-group NOPE in"])]}
+    assert "ACL 'NOPE' is applied" in messages(validate(acl, kb))
+    kb.update_device("R1", last_config="interface Ethernet0/0\n ip address 10.1.2.1 255.255.255.0\n!")
+    route = {"changes": [change("R1", ["ip route 0.0.0.0 0.0.0.0 10.9.9.9"], ["no ip route 0.0.0.0 0.0.0.0 10.9.9.9"])]}
+    assert "not in any connected subnet" in messages(validate(route, kb))
+    own = {"changes": [change("R1", ["ip route 0.0.0.0 0.0.0.0 10.1.2.1"], ["no ip route 0.0.0.0 0.0.0.0 10.1.2.1"])]}
+    assert "own address" in validate(own, kb)["errors"][0]
+
+
+def test_risk_score(kb):
+    read_only = validate({"changes": [change("R1", ["ping 10.1.1.1"], [], "check")]}, kb)["risk"]
+    assert read_only == {"score": 0, "level": "LOW", "reasons": read_only["reasons"]}
+    build_lab(kb)
+    small = validate({"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}, kb)["risk"]
+    assert small["level"] == "LOW" and len(small["reasons"]) == 6
+    shut = {"changes": [change("R2", ["interface e0/1", "shutdown"], ["interface e0/1", "no shutdown"])]}
+    risky = validate(shut, kb)["risk"]
+    assert risky["level"] == "HIGH" and "single point of failure" in " ".join(risky["reasons"])
+    shut["changes"][0]["rollback"] = []
+    worst = validate(shut, kb)
+    assert worst["risk"]["level"] == "CRITICAL" and worst["ok"]  # CRITICAL warns, it does not block
+
+
+def test_risk_is_sent_to_the_web_page(kb):
+    llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["vlan 30"], ["no vlan 30"])]})
+    plan = create_app(kb, llm).test_client().post("/api/intent", json={"text": "vlan 30"}).json
+    assert plan["validation"]["risk"]["level"] in ("LOW", "MEDIUM", "HIGH", "CRITICAL")
+
+
+# ---------------- Batfish pre-deployment analysis ----------------
+from ibn import settings  # noqa: E402
+from ibn.validation import batfish_check  # noqa: E402
+
+SAMPLE_CONFIGS = os.path.join(os.path.dirname(__file__), "batfish_sample", "configs")
+
+
+def test_batfish_applies_the_plan_to_the_config_text():
+    base = open(os.path.join(SAMPLE_CONFIGS, "R2.cfg")).read()
+    new = batfish_check.apply_commands(base, [
+        "interface Ethernet0/1", "shutdown", "exit",
+        "interface Ethernet0/2", "no ip access-group MGMT-ONLY in", "exit",
+        "no ip access-list extended MGMT-ONLY",
+        "ip route 0.0.0.0 0.0.0.0 10.1.2.1",
+        "router ospf 1", "no network 10.2.3.0 0.0.0.255 area 0",
+        "interface Loopback0", "ip address 10.0.0.22 255.255.255.255"])
+    assert " shutdown" in new.split("interface Ethernet0/1")[1].split("!")[0]
+    assert "MGMT-ONLY" not in new
+    assert "ip route 0.0.0.0 0.0.0.0 10.1.2.1" in new
+    assert "network 10.2.3.0" not in new and "network 10.1.2.0" in new
+    assert "10.0.0.22" in new and "10.0.0.2 255" not in new  # the new IP replaced the old one
+
+
+def test_batfish_is_off_by_default(kb, monkeypatch):
+    monkeypatch.setattr(settings, "BATFISH_HOST", "")
+    result = validate({"changes": [change("SW1", ["vlan 30"], ["no vlan 30"])]}, kb)
+    assert result["ok"] and result["batfish"]["status"] == "SKIPPED"
+
+
+def test_batfish_only_uses_real_configs(kb, monkeypatch):
+    """No config = not analyzed (and Batfish is not even contacted)."""
+    monkeypatch.setattr(settings, "BATFISH_HOST", "nowhere.invalid")
+    monkeypatch.setattr(settings, "BATFISH_CONFIG_DIR", "")
+    kb.add_device({"name": "R5", "ip": "10.0.0.5", "vendor": "cisco_ios", "state": "up"})
+    plan = {"changes": [change("SW1", ["vlan 30"], ["no vlan 30"]),       # simulated: not IOS
+                        change("R5", ["interface Loopback5"], ["no interface Loopback5"])]}  # no config
+    result = validate(plan, kb)
+    text = " ".join(r["message"] for r in result["batfish"]["results"])
+    assert result["ok"] and result["batfish"]["status"] == "SKIPPED"
+    assert "supports Cisco IOS only" in text and "no config for it" in text
+    assert not any("Batfish" in w for w in result["warnings"])  # not a problem with the plan
+
+
+@pytest.fixture
+def batfish_lab(tmp_path, monkeypatch):
+    """The sample network (tests/batfish_sample): R1 - R2 - R3 with OSPF. Needs a Batfish server:
+        docker run -d -p 9996:9996 batfish/batfish      then      TEST_BATFISH=1 pytest"""
+    if os.getenv("TEST_BATFISH") != "1":
+        pytest.skip("set TEST_BATFISH=1 (and run a Batfish server) to test Batfish")
+    monkeypatch.setattr(settings, "BATFISH_HOST", os.getenv("BATFISH_HOST", "localhost"))
+    monkeypatch.setattr(settings, "BATFISH_CONFIG_DIR", SAMPLE_CONFIGS)
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    for name in ("R1", "R2", "R3"):
+        kb.add_device({"name": name, "ip": f"10.0.0.{name[1]}", "vendor": "cisco_ios", "state": "up"})
+    kb.add_link("R1", "R2")
+    kb.add_link("R2", "R3")
+    return kb
+
+
+def batfish_results(kb, *changes):
+    result = validate({"changes": list(changes)}, kb)
+    return result, {(r["check"], r["status"]) for r in result["batfish"]["results"]}
+
+
+def test_batfish_passes_a_safe_change(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R1", ["interface Loopback5", "ip address 5.5.5.5 255.255.255.255",
+               "router ospf 1", "network 5.5.5.5 0.0.0.0 area 0"],
+        ["router ospf 1", "no network 5.5.5.5 0.0.0.0 area 0", "exit", "no interface Loopback5"]))
+    assert result["ok"] and result["batfish"]["status"] == "PASS"
+    assert {"validity", "references", "routing", "reachability", "acl"} == {c for c, _ in checks}
+
+
+def test_batfish_warns_about_lost_routes_and_reachability(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R2", ["interface Ethernet0/1", "shutdown"], ["interface Ethernet0/1", "no shutdown"]))
+    assert result["ok"] and result["batfish"]["status"] == "WARNING"  # warns, the user decides
+    assert ("routing", "WARNING") in checks and ("reachability", "WARNING") in checks
+    assert "R1 loses 10.0.3.0/24" in " ".join(result["warnings"])
+
+
+def test_batfish_fails_on_undefined_acl_and_loops(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R2", ["interface Ethernet0/0", "ip access-group NOPE in"],
+        ["interface Ethernet0/0", "no ip access-group NOPE in"]))
+    assert not result["ok"] and ("references", "FAIL") in checks
+    assert any("Batfish (references)" in e and "NOPE" in e for e in result["errors"])
+    result, checks = batfish_results(
+        batfish_lab,
+        change("R1", ["ip route 10.9.9.0 255.255.255.0 10.1.2.2"], ["no ip route 10.9.9.0 255.255.255.0 10.1.2.2"]),
+        change("R2", ["ip route 10.9.9.0 255.255.255.0 10.1.2.1"], ["no ip route 10.9.9.0 255.255.255.0 10.1.2.1"]))
+    assert not result["ok"] and ("routing", "FAIL") in checks
+
+
+def test_batfish_finds_acl_lines_that_never_match(batfish_lab):
+    result, checks = batfish_results(batfish_lab, change(
+        "R3", ["ip access-list extended BLOCK-LAN1", "permit ip any any", "deny ip 10.0.1.0 0.0.0.255 any",
+               "interface Ethernet0/0", "ip access-group BLOCK-LAN1 in"],
+        ["interface Ethernet0/0", "no ip access-group BLOCK-LAN1 in", "exit",
+         "no ip access-list extended BLOCK-LAN1"]))
+    assert ("acl", "WARNING") in checks
+    assert "can never match" in " ".join(result["warnings"])
+
+
+def test_a_subinterface_can_be_deleted_in_a_rollback():
+    from ibn.validation.config_model import is_physical
+    assert is_physical("Ethernet0/1") and not is_physical("Ethernet0/1.10") and not is_physical("Loopback0")

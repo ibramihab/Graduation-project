@@ -72,6 +72,30 @@ Every change to the project is listed here, so nothing surprises you.
 - 🟡 `discovery.py`: "Refresh up/down" marks simulated devices "up" (they live in the program, nothing to ping).
 - 🟡 `validator.py`: with `DRY_RUN=true` a device that is "down" is only a warning, so plans can still be tested.
 - 🟡 `web.py` + `index.html`: an empty Interfaces box now KEEPS the saved interfaces (like the password box).
+### Batfish pre-deployment analysis (optional, Cisco IOS / IOS-XE)
+- 🟢 `ibn/validation/batfish_check.py`: Batfish compares the network today (baseline) with the
+  network after the plan (proposed): config validity, undefined references, lost routes,
+  forwarding loops, traffic that would be dropped, ACL lines that never match. PASS / WARNING / FAIL
+  per check; FAIL = validation error, WARNING = warning. Baseline = the device's config backup or
+  a file in `BATFISH_CONFIG_DIR` (never invented). Off until `BATFISH_HOST` is set.
+- 🟢 `validate()` also returns `"batfish": {"status", "results"}` (`ok`/`errors`/`warnings`/`risk` unchanged);
+  Batfish problems also count in the risk score. Files: `validator.py`, `risk.py`.
+- 🟢 `settings.py`, `.env.example`: `BATFISH_HOST`, `BATFISH_NETWORK`, `BATFISH_CONFIG_DIR`.
+  `requirements.txt`: `pybatfish`. `index.html`: a "Batfish analysis" status + its checks under the plan.
+- 🟢 `tests/batfish_sample/configs/`: a sample Cisco IOS network (R1 - R2 - R3, OSPF) and 7 tests
+  (the 4 that need a Batfish server run with `TEST_BATFISH=1 pytest`).
+
+### Smarter validation: rollback, conflicts, prerequisites and a risk score
+- 🟢 `ibn/validation/` (new files `config_model.py`, `state.py`, `rollback.py`, `conflicts.py`,
+  `dependencies.py`, `risk.py`): the plan is simulated on a small model of each device's config
+  (from its backup and history). New checks: the rollback really undoes the change (and never
+  deletes what existed before), VLAN / IP / interface conflicts, missing prerequisites (VLANs,
+  port modes, ACLs, next hops). All 8 old checks are unchanged.
+- 🟢 `validate()` also returns `"risk": {"score", "level", "reasons"}` (0-100, LOW / MEDIUM / HIGH /
+  CRITICAL). `ok`, `errors`, `warnings` are unchanged; CRITICAL warns, it does not block.
+- 🟢 `index.html`: a colored risk badge + "Why this score" under the plan.
+- 🟡 `tests/test_ibn.py`: 10 new tests; one old test's fake rollback `undo sw1` became `no sw1`
+  (Cisco-like devices say "no"; "undo" is now refused).
 
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices
