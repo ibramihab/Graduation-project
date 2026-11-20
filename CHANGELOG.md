@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### 35 AI tests (was 16)
+- 🟢 `evaluation/tests.json`: 19 new tests: backup and removed routes, OSPF on three routers, passive interface,
+  telnet ACL, "only X may open the web server", Arabic ACL, DHCP relay, interface IP, shutdown, loopback,
+  trunk allowed VLANs, port security, traceroute/OSPF/Arabic checks, 3 more refusals.
+- 🟡 `evaluation/lab.json`: R4 got a free port Ethernet0/2 (for the interface test).
+
 ### More RAG knowledge: 92 examples + 10 Cisco notes
 - 🟢 `ibn/vendors/cisco_ios/examples.json`: 92 examples (was 48): more routes, OSPF, ACLs, NAT, DHCP, VLAN/trunk
   options, port security, STP, EtherChannel, HSRP, NTP/syslog/banner, checks, Arabic, refusals.
