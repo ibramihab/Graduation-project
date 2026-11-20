@@ -150,7 +150,7 @@ def test_happy_path(kb):
 def test_failure_rolls_back_every_device(kb):
     llm = FakeLLM({"summary": "x", "changes": [
         change("R1", ["ip route 0.0.0.0 0.0.0.0 10.0.0.254"], ["no ip route 0.0.0.0 0.0.0.0 10.0.0.254"]),
-        change("SW1", ["this is invalid"], ["no sw1"]),  # Cisco-like: "no", not "undo"
+        change("SW1", ["description invalid"], ["no description"]),  # the simulated device refuses "invalid"
     ]})
     plan = pipeline.propose("break it", kb, llm)
     result = pipeline.approve(plan["id"], kb)
@@ -703,7 +703,7 @@ def test_rollback_follows_vendor_rules(kb):
     plan = {"changes": [change("R1", ["interface Ethernet0/1", "description x"], ["no interface Ethernet0/1"])]}
     assert "physical port" in validate(plan, kb)["errors"][0]
     plan = {"changes": [change("R1", ["vlan 30"], ["undo vlan 30"])]}  # Cisco-like says "no"
-    assert "uses 'undo'" in validate(plan, kb)["errors"][0]
+    assert "uses 'undo'" in " ".join(validate(plan, kb)["errors"])  # (the syntax check also reports it)
     kb.add_device({"name": "FW1", "ip": "10.0.0.5", "vendor": "fortigate", "state": "up"})
     plan = {"changes": [change("FW1", ["config firewall policy", "edit 1001", "set action deny", "next", "end"],
                                ["config firewall policy", "delete 1001"])]}  # block never closed
@@ -721,7 +721,8 @@ def test_vlan_conflicts(kb):
     assert "renames it to 'Sales'" in text and "already used by VLAN 20" in text
     other_switch = {"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}
     assert "VLAN 30 is called 'Finance' on SW3" in messages(validate(other_switch, kb))
-    assert "not valid" in validate({"changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}, kb)["errors"][0]
+    errors = " ".join(validate({"changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}, kb)["errors"])
+    assert "not valid" in errors or "outside 1-4094" in errors  # the conflict check or the syntax check
     assert "default VLAN" in validate({"changes": [change("SW1", ["no vlan 1"], ["vlan 1"])]}, kb)["errors"][0]
 
 
@@ -737,7 +738,8 @@ def test_ip_conflicts(kb):
     assert "already used by R2 (Ethernet0/0)" in validate(loopback("10.1.2.2 255.255.255.255"), kb)["errors"][0]
     assert "overlaps Ethernet0/0" in validate(loopback("10.1.2.9 255.255.255.0"), kb)["errors"][0]
     assert "network address" in validate(loopback("10.9.9.0 255.255.255.0"), kb)["errors"][0]
-    assert "not a valid IP" in validate(loopback("10.9.9.1 255.0.255.0"), kb)["errors"][0]
+    errors = " ".join(validate(loopback("10.9.9.1 255.0.255.0"), kb)["errors"])
+    assert "not a valid IP" in errors or "not a valid mask" in errors  # the conflict check or the syntax check
     same = {"changes": [change("R1", ["interface Ethernet0/1", "ip address 10.1.1.1 255.255.255.0"], [])]}
     assert "conflict" not in messages(validate(same, kb))  # its own address again: fine
 
@@ -899,3 +901,147 @@ def test_batfish_finds_acl_lines_that_never_match(batfish_lab):
 def test_a_subinterface_can_be_deleted_in_a_rollback():
     from ibn.validation.config_model import is_physical
     assert is_physical("Ethernet0/1") and not is_physical("Ethernet0/1.10") and not is_physical("Loopback0")
+
+
+# ---- Idea 2: missing information -> the AI asks a question instead of guessing ----
+
+def test_missing_information_becomes_a_question(kb):
+    llm = FakeLLM({"summary": "QUESTION: On which router, and to which network?", "changes": []})
+    plan = pipeline.propose("configure static routing", kb, llm)
+    assert plan["question"] == "On which router, and to which network?"
+    assert not plan["validation"]["ok"] and plan["attempts"] == 1  # nothing to apply, no retry
+    assert not pipeline.approve(plan["id"], kb)["success"]  # a question can never be applied
+
+
+def test_a_normal_refusal_is_not_a_question(kb):
+    plan = pipeline.propose("x", kb, FakeLLM({"summary": "SW9 does not exist", "changes": []}))
+    assert "question" not in plan
+
+
+def test_question_reaches_the_web_page(kb):
+    client = create_app(kb, FakeLLM({"summary": "QUESTION: Which VLAN number?", "changes": []})).test_client()
+    assert client.post("/api/intent", json={"text": "create a vlan"}).json["question"] == "Which VLAN number?"
+
+
+# ---- Idea 4: post-validation ("verify" commands run after applying) ----
+
+def verified(device, commands, rollback, verify):
+    return {**change(device, commands, rollback), "verify": verify}
+
+
+def test_verify_passes_when_the_intent_really_happened(kb):
+    llm = FakeLLM({"summary": "route", "changes": [
+        verified("R1", ["ip route 10.9.0.0 255.255.0.0 10.0.0.2"], ["no ip route 10.9.0.0 255.255.0.0 10.0.0.2"],
+                 ["ping 10.9.0.1"])]})
+    result = pipeline.approve(pipeline.propose("route", kb, llm)["id"], kb)
+    assert result["success"]
+    assert [(r["device"], r["status"]) for r in result["results"]] == [("R1", "applied"), ("R1", "verified")]
+
+
+def test_failed_verify_rolls_everything_back(kb):
+    # The simulated device never answers a ping to 192.0.2.x: the intent was not reached.
+    llm = FakeLLM({"summary": "x", "changes": [
+        verified("SW1", ["vlan 10"], ["no vlan 10"], []),
+        verified("R1", ["ip route 192.0.2.0 255.255.255.0 10.0.0.2"],
+                 ["no ip route 192.0.2.0 255.255.255.0 10.0.0.2"], ["ping 192.0.2.1"])]})
+    result = pipeline.approve(pipeline.propose("x", kb, llm)["id"], kb)
+    assert not result["success"]
+    assert [(r["device"], r["status"]) for r in result["results"]] == [
+        ("SW1", "applied"), ("R1", "applied"), ("R1", "verify failed"),
+        ("R1", "rolled back"), ("SW1", "rolled back")]
+    assert FAKE_CONFIGS["SW1"][-1] == "no vlan 10"
+    assert kb.get_history("R1")[0]["success"] is False
+
+
+def test_verify_commands_must_be_read_only(kb):
+    plan = {"changes": [verified("SW1", ["vlan 10"], ["no vlan 10"], ["vlan 99"])]}
+    errors = validate(plan, kb)["errors"]
+    assert any("verify command 'vlan 99'" in e for e in errors)
+
+
+def test_translate_cleans_verify_and_only_keeps_it_on_config_steps(kb):
+    from ibn.intent import translate
+    plan = translate("x", kb.list_devices(), FakeLLM({"summary": "x", "changes": [
+        {**change("SW1", ["vlan 10"], ["no vlan 10"]), "verify": ["show vlan brief", "end", ""]},
+        {**change("R1", ["ping 10.0.0.2"], [], "check"), "verify": ["show run"]},
+        change("R1", ["hostname R1"], ["hostname R1"])]}))  # the AI forgot "verify"
+    assert [c["verify"] for c in plan["changes"]] == [["show vlan brief"], [], []]
+
+
+def test_vendor_knows_what_a_failed_ping_looks_like():
+    from ibn.control.controller import _looks_failed
+    cisco, huawei = {"vendor": "cisco_ios"}, {"vendor": "huawei"}
+    assert _looks_failed("Success rate is 0 percent (0/5)", cisco)
+    assert not _looks_failed("Success rate is 80 percent (4/5)", cisco)
+    assert _looks_failed("5 packet(s) transmitted\n100.00% packet loss", huawei)
+    assert _looks_failed("% Invalid input detected", cisco)  # a rejected verify command
+
+
+# ---- Idea 5: negative tests (wrong requests must be refused, with a clear reason) ----
+
+def test_negative_dangerous_command_hidden_in_the_rollback(kb):
+    errors = validate({"changes": [change("R1", ["hostname R1"], ["reload"])]}, kb)["errors"]
+    assert errors == ["R1: 'reload' is blocked (restarts the device)"]
+
+
+def test_negative_device_that_is_down(kb):
+    kb.update_device("SW1", state="down")
+    errors = validate({"changes": [change("SW1", ["vlan 10"], ["no vlan 10"])]}, kb)["errors"]
+    assert errors == ["SW1: device is down (not answering ping)"]
+
+
+def test_negative_unknown_vendor(kb):
+    kb.add_device({"name": "host-9", "ip": "10.0.0.9", "vendor": "unknown", "state": "up"})
+    errors = validate({"changes": [change("host-9", ["vlan 10"], ["no vlan 10"])]}, kb)["errors"]
+    assert errors == ["host-9: no driver for vendor 'unknown'"]
+
+
+def test_negative_huawei_reboot_and_user_deletion(tmp_path):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    kb.add_device({"name": "HW1", "ip": "10.0.0.1", "vendor": "huawei", "state": "up"})
+    for command in ["reboot", "undo local-user admin"]:
+        assert not validate({"changes": [change("HW1", [command], ["x"])]}, kb)["ok"], command
+
+
+def test_negative_empty_plan_is_refused(kb):
+    assert validate({"summary": "nothing", "changes": []}, kb)["errors"] == ["The plan has no changes. nothing"]
+
+
+# ---- Syntax (pre-validation): known commands and possible values ----
+
+def syntax_errors(kb, commands, rollback=("no description",), type="config"):
+    return validate({"changes": [change("R1", list(commands), list(rollback), type)]}, kb)["errors"]
+
+
+def test_syntax_accepts_normal_cisco_commands(kb):
+    good = ["interface Ethernet0/0", "description Uplink to R2", "ip address 10.1.2.1 255.255.255.0",
+            "no shutdown", "exit", "ip route 192.168.3.0 255.255.255.0 10.1.2.2", "router ospf 1",
+            "network 10.1.2.0 0.0.0.255 area 0", "ip access-list extended BLOCK", "10 deny ip any any",
+            "permit ip any any", "vlan 10", "name Sales", "switchport mode access"]
+    assert syntax_errors(kb, good) == []
+
+
+def test_syntax_refuses_typos(kb):
+    for typo in ["ip rout 192.168.3.0 255.255.255.0 10.1.2.2", "vlna 10", "sh ip int br"]:
+        errors = syntax_errors(kb, [typo])
+        assert errors and "is not a known" in errors[0], typo
+
+
+def test_syntax_refuses_impossible_values(kb):
+    assert "10.0.0.300 is not a valid IP address" in syntax_errors(kb, ["ip address 10.0.0.300 255.255.255.0"])[0]
+    assert "255.0.255.0 is not a valid mask" in syntax_errors(kb, ["ip address 10.0.0.1 255.0.255.0"])[0]
+    assert "(use 192.168.3.0)" in syntax_errors(kb, ["ip route 192.168.3.1 255.255.255.0 10.0.0.2"])[0]
+    assert "VLAN 5000 is outside 1-4094" in syntax_errors(kb, ["vlan 5000"])[0]
+    assert "is not a valid IP address" in syntax_errors(kb, ["ping 10.0.0.300"], [], "check")[0]
+
+
+def test_syntax_checks_the_rollback_too(kb):
+    assert "is not a known" in syntax_errors(kb, ["vlan 10"], ["no vlna 10"])[0]
+
+
+def test_syntax_list_is_skipped_for_vendors_without_one(tmp_path):
+    kb = FileGraph(str(tmp_path / "kb.json"))
+    kb.add_device({"name": "HW1", "ip": "10.0.0.1", "vendor": "huawei", "state": "up"})
+    assert validate({"changes": [change("HW1", ["vlan batch 10 20"], ["undo vlan batch 10 20"])]}, kb)["ok"]
+    bad = validate({"changes": [change("HW1", ["ip address 10.0.0.1 255.0.255.0"], ["undo ip address"])]}, kb)
+    assert not bad["ok"]  # the values are still checked on every vendor

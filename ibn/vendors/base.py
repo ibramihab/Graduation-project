@@ -3,9 +3,10 @@
 Each vendor has ONE folder with everything about it (ibn/vendors/cisco_ios/, huawei/...):
     profile.py      the PROFILE below; every layer reads it:
         intent      -> ai_hints (rules + examples for the AI), wrapper_lines (lines to clean)
-        validation  -> blocked, warn, check_commands
+        validation  -> blocked, warn, check_commands, config_commands (syntax)
         drivers     -> netmiko_type, show_config, show_interfaces, parse_interfaces,
                        error_markers, neighbors
+        control     -> verify_failed (how a failed post-validation check looks)
     examples.json   (optional) solved requests: the AI's knowledge for RAG (ibn/intent/rag/)
 
 To add a vendor: copy a vendor folder, change the values in profile.py, and add it to the
@@ -45,6 +46,18 @@ class VendorProfile:
     check_commands: str = r"^(show|ping|traceroute)\b"  # regex: read-only commands
     blocked: list[tuple[str, str]] = field(default_factory=list)  # (regex, reason): never allowed
     warn: list[tuple[str, str]] = field(default_factory=list)     # (regex, reason): look twice
+    # Syntax (pre-validation): regex of the config commands this vendor knows, matched on
+    # each command without a leading "no". Not matching = unknown or misspelled command.
+    # "" = no syntax list yet for this vendor: the check is skipped.
+    config_commands: str = ""
+
+    # ---- control (post-validation: did the change really work?) ----
+    # regex, searched in the lowercase output of a "verify" command: a match = FAILED.
+    # The defaults catch a ping that got no reply on every common vendor:
+    #   Cisco "Success rate is 0 percent", Huawei/Nexus/Linux "100% packet loss",
+    #   MikroTik "packet-loss=100%".
+    verify_failed: list[str] = field(default_factory=lambda: [
+        r"success rate is 0 percent", r"\b100(\.0+)?% packet loss", r"packet-loss=100%"])
 
     # ---- intent (the AI) ----
     wrapper_lines: set[str] = field(default_factory=set)  # added by the driver itself: removed
