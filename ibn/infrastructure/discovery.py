@@ -8,6 +8,7 @@
 Ideas for later: SNMP, LLDP, reading ARP/MAC tables, traceroute.
 """
 import ipaddress
+from datetime import datetime
 import platform
 import socket
 import subprocess
@@ -107,6 +108,11 @@ def discover_links(kb) -> list[str]:
         try:
             with get_driver(device) as driver:
                 kb.update_device(device["name"], interfaces=driver.get_interfaces())
+                # getattr: drivers written before get_vlans existed still work
+                vlans = getattr(driver, "get_vlans", lambda: [])()
+                if vlans:  # a switch: remember its VLANs, and when we read them
+                    kb.update_device(device["name"], vlans=vlans,
+                                     vlans_read_at=datetime.now().isoformat(timespec="seconds"))
                 for neighbor in driver.get_neighbors():
                     if neighbor in names:
                         kb.add_link(device["name"], neighbor)

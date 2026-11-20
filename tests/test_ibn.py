@@ -70,6 +70,326 @@ def test_validation_blocks_unknown_device(kb):
     assert "not in the knowledge base" in validate(plan, kb)["errors"][0]
 
 
+def test_invalid_vlan_number_is_refused(kb):
+    for bad in (["vlan 5000", "name Test"], ["vlan 0"], ["interface e0/1", "switchport access vlan 4095"],
+                ["interface e0/1", "switchport trunk allowed vlan add 4095"],
+                ["interface e0/1", "switchport trunk allowed vlan 10,20-5000"],
+                ["vlan batch 10 to 5000"], ["interface e0/0.9", "encapsulation dot1Q 5000"]):
+        plan = {"changes": [change("SW1", bad, ["no vlan 1"])]}
+        result = validate(plan, kb)
+        assert not result["ok"] and "invalid VLAN number" in result["errors"][0]
+    for good in (["vlan 1"], ["vlan 10", "name Sales"], ["vlan 4094"],
+                 ["interface e0/1", "switchport trunk allowed vlan add 10,20-30"],
+                 ["spanning-tree vlan 10 priority 4096"]):
+        assert validate({"changes": [change("SW1", good, ["no vlan 10"])]}, kb)["ok"]
+
+
+def test_change_on_the_management_interface_warns(kb):
+    # SW1 is reached on 10.0.0.2, which is on Vlan1
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+
+    def warnings(commands):
+        # a correct rollback (puts the management IP back), so only the warnings are tested here
+        rollback = ["interface Vlan1", "no shutdown", "ip address 10.0.0.2 255.255.255.0"]
+        result = validate({"changes": [change("SW1", commands, rollback)]}, kb)
+        assert result["ok"]  # a warning, not an error: the user may really want it
+        return " ".join(result["warnings"])
+
+    assert "cuts the program's connection" in warnings(["interface Vlan1", "shutdown"])
+    assert "cuts the program's connection" in warnings(["interface vlan 1", "no ip address"])
+    assert "changes the management IP" in warnings(["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"])
+    # Not the management interface, or nothing that cuts us off: no management warning
+    assert "management" not in warnings(["interface Ethernet0/1", "shutdown"])
+    assert "management" not in warnings(["interface Vlan1", "description mgmt"])
+    assert "management" not in warnings(["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"])
+    assert "management" not in warnings(["interface Vlan1", "ip address 10.9.9.9 255.255.255.0 secondary"])
+    # The IP was typed with spaces around it on the web page: still the same device IP
+    kb.update_device("SW1", ip="   10.0.0.2 ")
+    assert "cuts the program's connection" in warnings(["interface Vlan1", "shutdown"])
+
+
+def test_rollback_must_not_cut_the_device_off(kb):
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+    move = ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"]
+
+    def errors(commands, rollback):
+        return " ".join(validate({"changes": [change("SW1", commands, rollback)]}, kb)["errors"])
+
+    # The real mistake the AI made: "undo" the new IP by deleting the whole interface
+    bad = errors(move, ["no interface Vlan1", "no ip address 10.0.0.50 255.255.255.0"])
+    assert "deletes Vlan1" in bad
+    assert "ip address 10.0.0.2 255.255.255.0" in bad  # it tells the AI the right rollback
+    # A rollback that forgets the old IP
+    assert "must put the management IP back" in errors(move, ["interface Vlan1", "no ip address"])
+    # Deleting the management interface is wrong in any rollback
+    assert "deletes Vlan1" in errors(["interface Vlan1", "description mgmt"], ["no interface vlan 1"])
+    # The right rollback passes
+    assert errors(move, ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]) == ""
+
+
+def test_invalid_ip_address_is_refused(kb):
+    def errors(command):
+        return " ".join(validate({"changes": [change("R1", ["interface Loopback5", command],
+                                                     ["no interface Loopback5"])]}, kb)["errors"])
+
+    assert "invalid IP address 300.1.1.1" in errors("ip address 300.1.1.1 255.255.255.255")
+    assert "invalid IP address 10.1.1" in errors("ip address 10.1.1 255.255.255.0")
+    assert "invalid mask 255.0.255.0" in errors("ip address 10.1.1.1 255.0.255.0")
+    assert "did you mean 255.255.255.0" in errors("ip address 10.1.1.1 0.0.0.255")  # an ACL wildcard
+    assert "invalid mask 33" in errors("ip address 10.1.1.1/33")
+    assert "network address" in errors("ip address 10.1.1.0 255.255.255.0")
+    assert "broadcast address" in errors("ip address 10.1.1.255 255.255.255.0")
+    # Good ones (Cisco, Huawei "24", Arista "/24", FortiGate, /31, /32, secondary, removing an IP)
+    for good in ("ip address 10.1.1.1 255.255.255.0", "ip address 10.1.1.1 24", "ip address 10.1.1.1/24",
+                 "set ip 10.1.1.1 255.255.255.0", "ip address 10.1.1.0 255.255.255.254",
+                 "ip address 5.5.5.5 255.255.255.255", "ip address 10.9.9.9 255.255.255.0 secondary",
+                 "no ip address 300.1.1.1 255.255.255.0", "ip address dhcp"):
+        assert errors(good) == "", good
+
+
+def test_the_ai_may_not_change_the_users_values(kb):
+    def errors(request, commands):
+        plan = {"intent": request, "changes": [change("R1", commands, ["no interface Loopback5"])]}
+        return " ".join(validate(plan, kb)["errors"])
+
+    # The AI changed a valid IP the user asked for (10.1.1.5 -> 10.1.1.1)
+    bad = errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.5/24",
+                 ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"])
+    assert "You asked for IP address 10.1.1.5" in bad and "it uses 10.1.1.1 instead" in bad
+    # Kept as asked: no error (masks and IPs the network already has are not "values to keep")
+    assert errors("Set the IP of Ethernet0/0 on R1 to 10.1.1.1/24",
+                  ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"]) == ""
+    assert errors("Change R1's IP from 10.0.0.1 to 10.0.0.9 255.255.255.0",
+                  ["interface Ethernet0/0", "ip address 10.0.0.9 255.255.255.0"]) == ""
+    # On the second try, the errors we sent back are not the user's words
+    assert errors("Set R1's loopback to 5.5.5.5/32\n\nYour previous plan was rejected by the safety "
+                  "checks:\n- R1: 'ip address 300.1.1.1 ...'", ["interface Loopback5", "ip address 5.5.5.5 32"]) == ""
+
+
+def test_wrong_ip_in_the_request_is_refused_in_our_words(kb):
+    from ibn.validation.validator import request_problems
+    assert "network address" in request_problems("Set the IP of interface Ethernet0/0 on R2 to 10.1.1.0/24")[0]
+    assert "broadcast address" in request_problems("Set the IP of interface e0/2 on R2 to 172.16.0.255/24")[0]
+    assert "invalid IP address 300.1.1.1" in request_problems("Create loopback 5 with IP 300.1.1.1/32 on R1")[0]
+    assert "invalid IP address 10.5.5" in request_problems("Set the IP of interface e0/1 on R1 to 10.5.5/24")[0]
+    assert "invalid mask" in request_problems("Set the IP of interface e0/1 on R1 to 10.5.5.1 with mask 255.0.255.0")[0]
+    # Fine: a good IP, a /31 link, a network address in a route, a version number
+    for ok in ("Set the IP of interface Ethernet0/0 on R2 to 10.1.1.1/24",
+               "Set the IP of interface e0/1 on R1 to 10.0.12.0/31",
+               "Add a static route to 192.168.5.0/24 via 10.1.2.2 on R1",
+               "Upgrade R1 to IOS 15.2.4"):
+        assert request_problems(ok) == [], ok
+
+    # The whole flow: the AI "fixes" 10.1.1.0 into 10.1.1.1. We don't ask it again, we hide its plan,
+    # and the message is ours, with no other IP suggested.
+    llm = FakeLLM({"summary": "The correct IP is 10.1.1.1/24", "changes": [
+        change("R1", ["interface Ethernet0/0", "ip address 10.1.1.1 255.255.255.0"], ["no ip address"])]})
+    plan = pipeline.propose("Set the IP of interface Ethernet0/0 on R1 to 10.1.1.0/24", kb, llm)
+    assert plan["attempts"] == 1 and plan["changes"] == [] and not plan["validation"]["ok"]
+    assert plan["summary"].startswith("This can't be done.") and "10.1.1.1" not in plan["summary"]
+    assert all(e.startswith("Your request:") for e in plan["validation"]["errors"])
+
+
+class AnswersInTurn:
+    """A fake AI that gives the next answer from a list each time it is asked."""
+    def __init__(self, *answers):
+        self.answers, self.requests = list(answers), []
+
+    def ask_json(self, system, user, schema):
+        self.requests.append(user)
+        return self.answers.pop(0)
+
+
+def test_refused_valid_ip_gets_a_second_try_and_our_words(kb):
+    request = "Give interface Ethernet0/1 on R1 the IP 10.0.12.0/31"  # a wording the program doesn't write itself
+    refusal = {"summary": "Impossible, use 10.0.12.1/31 or 10.0.12.2/31", "changes": []}
+    good = {"summary": "x", "changes": [change("R1", ["interface Ethernet0/1",
+            "ip address 10.0.12.0 255.255.255.254"], ["interface Ethernet0/1", "no ip address"])]}
+
+    # 1st answer: a refusal. We say the IP is valid and ask again; the 2nd answer is a good plan.
+    llm = AnswersInTurn(refusal, good)
+    plan = pipeline.propose(request, kb, llm)
+    assert plan["validation"]["ok"] and plan["attempts"] == 2
+    assert "10.0.12.0/31) were checked by the program and are valid" in llm.requests[1]
+
+    # Refused twice: its wrong reasons and its IPs are hidden, the message is ours.
+    plan = pipeline.propose(request, kb, AnswersInTurn(refusal, refusal))
+    assert not plan["validation"]["ok"] and plan["summary"].startswith("The AI couldn't make a plan")
+    assert "10.0.12.1" not in plan["summary"] and "10.0.12.1" not in " ".join(plan["validation"]["errors"])
+
+    # A request without IPs: the AI's own answer is kept, and it's not asked again
+    llm = AnswersInTurn({"summary": "Too vague: say what to change", "changes": []})
+    plan = pipeline.propose("Make the network faster", kb, llm)
+    assert plan["attempts"] == 1 and plan["summary"] == "Too vague: say what to change"
+
+
+def test_the_door_to_the_lab_warns(kb, monkeypatch):
+    # The lab file: this PC is 192.168.43.1, R1 is reached on its Loopback0 (10.0.0.1)
+    # through Ethernet0/3 (192.168.43.2/24). Every device goes through that door.
+    from ibn.validation import validator
+    monkeypatch.setattr(validator, "local_ips", lambda: ["127.0.0.1", "192.168.43.1"])
+    kb.update_device("R1", interfaces=["Loopback0 10.0.0.1/32", "Ethernet0/3 192.168.43.2/24",
+                                       "Ethernet0/1 10.1.2.1/24"])
+
+    def warnings(commands):
+        result = validate({"changes": [change("R1", commands, ["interface Ethernet0/3", "no shutdown"])]}, kb)
+        return " ".join(result["warnings"])
+
+    assert "cut the program off from EVERY device" in warnings(["interface Ethernet0/3", "shutdown"])
+    assert "this PC (192.168.43.1)" in warnings(["interface e0/3", "ip address 192.168.50.2 255.255.255.0"])
+    assert "EVERY device" not in warnings(["interface Ethernet0/1", "shutdown"])   # an ordinary port
+    assert "EVERY device" not in warnings(["interface Ethernet0/3", "description to PC"])
+
+
+def test_ip_conflicts_are_refused(kb):
+    # As "Find links & IPs" saves them from real devices (Cisco with masks)
+    kb.update_device("R1", interfaces=["Loopback0 10.0.0.1/32", "Ethernet0/0 10.0.12.1/24",
+                                       "Ethernet0/1 unassigned"])
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.1.11/24"])
+
+    def errors(*changes):
+        return " ".join(validate({"changes": list(changes)}, kb)["errors"])
+
+    def set_ip(device, interface, ip_line, rollback=("no ip address",)):
+        return change(device, [f"interface {interface}", ip_line], [f"interface {interface}", *rollback])
+
+    # Same IP on another device, and another device's management IP (SW1 is reached on 10.0.0.2)
+    assert "10.0.12.1 is already used on R1 Ethernet0/0" in errors(
+        set_ip("SW1", "Vlan2", "ip address 10.0.12.1 255.255.255.0"))
+    assert "10.0.0.2 is already used on SW1 (its management IP)" in errors(
+        set_ip("R1", "e0/1", "ip address 10.0.0.2 255.255.255.0"))
+    # Same IP on two interfaces of one device; overlapping subnets on one device (Cisco refuses it)
+    assert "already used on R1 Ethernet0/0" in errors(set_ip("R1", "e0/1", "ip address 10.0.12.1 255.255.255.0"))
+    assert "overlaps with Ethernet0/0 (10.0.12.1/24)" in errors(set_ip("R1", "e0/1", "ip address 10.0.12.200 255.255.255.0"))
+    # Two devices given the same new IP in one plan
+    assert "10.5.5.5 is already used on R1" in errors(set_ip("R1", "e0/1", "ip address 10.5.5.5 255.255.255.0"),
+                                                     set_ip("SW1", "Vlan5", "ip address 10.5.5.5 255.255.255.0"))
+    # Other vendors' syntax: Huawei "24", FortiGate "set ip"
+    assert "already used" in errors(set_ip("SW1", "Vlanif5", "ip address 10.0.12.1 24"))
+    assert "already used" in errors(change("SW1", ['edit "port1"', "set ip 10.0.12.1 255.255.255.0"], ["unset ip"]))
+
+    # Fine: same interface again, a new free IP, a different subnet, a /31, and MOVING an IP in one plan
+    for ok in ([set_ip("R1", "Ethernet0/0", "ip address 10.0.12.1 255.255.255.0")],
+               [set_ip("R1", "e0/0", "ip address 10.0.12.9 255.255.255.0")],
+               [set_ip("R1", "e0/1", "ip address 10.0.13.1 255.255.255.0")],
+               [set_ip("R1", "e0/1", "ip address 10.0.99.0 255.255.255.254")],
+               [change("R1", ["interface Ethernet0/0", "no ip address"], ["interface Ethernet0/0", "ip address 10.0.12.1 255.255.255.0"]),
+                set_ip("SW1", "Vlan2", "ip address 10.0.12.1 255.255.255.0")]):
+        assert errors(*ok) == "", ok
+
+
+def test_renaming_an_existing_vlan_warns(kb, monkeypatch):
+    def warnings(commands, device="SW1"):
+        return " ".join(validate({"changes": [change(device, commands, ["no vlan 10"])]}, kb)["warnings"])
+
+    # Made by the program before (a successful change in the history)
+    kb.record_change("SW1", {"time": "2020-01-01T10:00:00", "type": "config", "success": True,
+                             "commands": ["vlan 10", "name HR"]})
+    assert "VLAN 10 already exists on SW1 as 'HR': this plan renames it to 'Sales'" in warnings(["vlan 10", "name Sales"])
+    assert "already exists" not in warnings(["vlan 10", "name HR"])      # same name
+    assert "already exists" not in warnings(["vlan 20", "name Sales"])   # a new VLAN
+    assert "already exists" not in warnings(["vlan 10", "name Sales"], device="R1")  # another device
+    # A failed (rolled back) change doesn't count; a later "no vlan 10" deletes it
+    kb.record_change("SW1", {"time": "2020-01-01T10:05:00", "type": "config", "success": False,
+                             "commands": ["vlan 10", "name Wrong"]})
+    assert "as 'HR'" in warnings(["vlan 10", "name Sales"])
+    kb.record_change("SW1", {"time": "2020-01-01T10:10:00", "type": "config", "success": True,
+                             "commands": ["no vlan 10"]})
+    assert "already exists" not in warnings(["vlan 10", "name Sales"])
+
+    # A real switch: "Find links & IPs" reads its VLANs (and only later changes count on top)
+    from ibn.infrastructure import discovery
+
+    class Switch:
+        def __init__(self, device): self.device = device
+        def __enter__(self): return self
+        def __exit__(self, *error): return False
+        def get_interfaces(self): return []
+        def get_neighbors(self): return []
+        def get_vlans(self): return ["1 default", "30 Finance"] if self.device["name"] == "SW1" else []
+
+    monkeypatch.setattr(discovery, "get_driver", lambda device: Switch(device))
+    discovery.discover_links(kb)
+    assert kb.get_device("SW1")["vlans"] == ["1 default", "30 Finance"]
+    assert "vlans" not in kb.get_device("R1")  # a router has none
+    assert "VLAN 30 already exists on SW1 as 'Finance'" in warnings(["vlan 30", "name Guests"])
+    assert "already exists" not in warnings(["vlan 10", "name Sales"])  # gone from the switch
+
+
+def test_missing_references_warn(kb):
+    def warnings(*changes):
+        return " ".join(validate({"changes": list(changes)}, kb)["warnings"])
+
+    # 1-2. Access lists: used but never created -> Cisco filters nothing
+    apply_101 = change("R1", ["interface Ethernet0/0", "ip access-group 101 in"],
+                       ["interface Ethernet0/0", "no ip access-group 101 in"])
+    assert "uses access list 101" in warnings(apply_101) and "filters NOTHING" in warnings(apply_101)
+    assert "logins are accepted from anywhere" in warnings(
+        change("R1", ["line vty 0 4", "access-class 10 in"], ["line vty 0 4", "no access-class 10 in"]))
+    # ...not when the plan creates it, or the device's backup / the program's history has it
+    assert "access list" not in warnings(change("R1", ["access-list 101 deny ip any host 10.9.9.9",
+                                                      "access-list 101 permit ip any any",
+                                                      "interface Ethernet0/0", "ip access-group 101 in"],
+                                                ["no access-list 101"]))
+    kb.save_backup("R1", "hostname R1\nip access-list extended BLOCK\n deny ip any any\naccess-list 101 permit ip any any")
+    assert "access list" not in warnings(apply_101)
+    assert "access list" not in warnings(change("R1", ["interface Ethernet0/0", "ip access-group BLOCK out"], ["x"]))
+
+    # 3. A port in a VLAN that doesn't exist -> the switch creates it with no name
+    port_60 = change("SW1", ["interface Ethernet0/1", "switchport access vlan 60"], ["interface Ethernet0/1", "no switchport access vlan"])
+    assert "puts a port in VLAN 60" in warnings(port_60)
+    assert "puts a port in VLAN 60" not in warnings(change("SW1", ["vlan 60", "name Users"], ["no vlan 60"]), port_60)  # created in the plan
+    assert "puts a port" not in warnings(change("SW1", ["interface Ethernet0/1", "switchport access vlan 1"], ["x"]))
+    kb.update_device("SW1", vlans=["1 default", "60 Users"], vlans_read_at="2020-01-01T00:00:00")  # read from the switch
+    assert "puts a port" not in warnings(port_60)
+
+    # 4. A static route whose next hop isn't on a connected network
+    route = lambda hop: change("R1", [f"ip route 192.168.5.0 255.255.255.0 {hop}"], [f"no ip route 192.168.5.0 255.255.255.0 {hop}"])
+    assert "next hop" not in warnings(route("10.0.12.2"))  # no masks saved yet: can't tell, no warning
+    kb.update_device("R1", interfaces=["Ethernet0/0 10.0.12.1/24", "Loopback0 10.0.0.1/32"])
+    assert "next hop" not in warnings(route("10.0.12.2"))
+    assert "the next hop 10.9.9.1" in warnings(route("10.9.9.1"))
+    assert "next hop" not in warnings(change("R1", ["interface Ethernet0/1", "ip address 10.9.9.2 255.255.255.0"],
+                                             ["interface Ethernet0/1", "no ip address"]), route("10.9.9.1"))
+
+
+def test_changing_a_device_the_user_didnt_name_warns(kb):
+    def warnings(request, *changes):
+        return " ".join(validate({"intent": request, "changes": list(changes)}, kb)["warnings"])
+
+    vlan_sw1 = change("SW1", ["vlan 20", "name IT"], ["no vlan 20"])
+    subif_r1 = change("R1", ["interface Ethernet0/0.20", "encapsulation dot1Q 20"], ["no interface Ethernet0/0.20"])
+    assert "R1: you didn't name R1 in your request" in warnings("Create VLAN 20 named IT on sw1", vlan_sw1, subif_r1)
+    assert "SW1" not in warnings("Create VLAN 20 named IT on sw1", vlan_sw1, subif_r1).split(":")[0]
+    # Any language: only the device names are compared
+    assert "you didn't name R1" in warnings("اعمل VLAN 20 على sw1", vlan_sw1, subif_r1)
+    # No warning: every changed device is named, no device named at all, or only a check on another one
+    assert "didn't name" not in warnings("VLAN 20 on sw1 and a sub-interface on R1", vlan_sw1, subif_r1)
+    assert "didn't name" not in warnings("Configure VLAN 20 everywhere", vlan_sw1, subif_r1)
+    assert "didn't name" not in warnings("Create VLAN 20 on sw1 and test it", vlan_sw1,
+                                         change("R1", ["ping 10.0.0.2"], [], type="check"))
+    # "R1" inside another word is not R1
+    assert "you didn't name R1" in warnings("Create VLAN 20 on sw1 (not on R10)", vlan_sw1, subif_r1)
+
+
+def test_switch_commands_on_a_router_are_refused(kb):
+    def errors(device, commands):
+        return " ".join(validate({"changes": [change(device, commands, ["no shutdown"])]}, kb)["errors"])
+
+    # The AI's real mistake: a trunk on router R2's Ethernet port
+    kb.add_device({"name": "R2", "ip": "10.0.0.3", "vendor": "simulated", "state": "up"})
+    assert "'switchport mode trunk' is a switch command, but R2 is a router" in errors(
+        "R2", ["interface Ethernet0/0", "switchport mode trunk", "switchport trunk allowed vlan add 10"])
+    for command in ("vlan 10", "spanning-tree vlan 1 priority 4096", "interface Vlan10"):
+        assert "is a switch command" in errors("R1", [command]), command
+    # Fine: router commands on a router, switch commands on a switch, and a router-like name
+    # that "Find links" showed to be a switch (it answered with its VLANs)
+    assert errors("R1", ["interface Ethernet0/0.10", "encapsulation dot1Q 10"]) == ""
+    assert errors("SW1", ["vlan 10", "interface Ethernet0/1", "switchport access vlan 10"]) == ""
+    kb.update_device("R2", vlans=["1 default"])
+    assert errors("R2", ["switchport mode trunk"]) == ""
+
+
 def test_check_steps_are_read_only(kb):
     ok = {"changes": [change("R1", ["ping 10.2.3.3", "show ip route"], [], type="check")]}
     assert validate(ok, kb)["ok"]
@@ -134,6 +454,29 @@ def test_ai_fixes_its_plan_after_validation_errors(kb):
     assert plan["intent"] == "describe R1's first port"
 
 
+class HonestLLM:
+    """First plan has an invalid VLAN; on the second try it refuses instead of guessing."""
+
+    def __init__(self):
+        self.requests = []
+
+    def ask_json(self, system, user, schema):
+        self.requests.append(user)
+        if len(self.requests) == 1:
+            return {"summary": "x", "changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}
+        return {"summary": "VLAN 5000 can't be created: allowed VLANs are 1-4094.", "changes": []}
+
+
+def test_ai_is_told_not_to_guess_the_users_values(kb):
+    llm = HonestLLM()
+    plan = pipeline.propose("create vlan 5000 on SW1", kb, llm)
+    assert "do NOT change or guess" in llm.requests[1]  # the rule was sent with the errors
+    assert "Do NOT suggest a different value" in llm.requests[1]  # no "use 10.1.1.1 instead"
+    assert "1-4094" in llm.requests[1]                  # and the allowed range, so it can explain
+    assert not plan["validation"]["ok"] and plan["id"] not in pipeline.PENDING  # nothing to approve
+    assert "1-4094" in plan["summary"]
+
+
 def test_happy_path(kb):
     llm = FakeLLM({"summary": "vlan", "changes": [change("SW1", ["conf t", "vlan 10", "name Sales"], ["no vlan 10"])]})
     plan = pipeline.propose("create vlan 10 on SW1", kb, llm)
@@ -160,6 +503,112 @@ def test_failure_rolls_back_every_device(kb):
     assert statuses == [("R1", "applied"), ("SW1", "failed"),
                         ("SW1", "rolled back"), ("R1", "rolled back")]
     assert FAKE_CONFIGS["R1"][-1] == "no ip route 0.0.0.0 0.0.0.0 10.0.0.254"
+
+
+def change_management_ip(kb):
+    """SW1 is reached on 10.0.0.2 (on Vlan1); the plan moves it to 10.0.0.50."""
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+    llm = FakeLLM({"summary": "x", "changes": [change(
+        "SW1", ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"],
+        ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"])]})
+    return pipeline.approve(pipeline.propose("move SW1", kb, llm)["id"], kb)
+
+
+def test_new_management_ip_is_saved_automatically(kb):
+    result = change_management_ip(kb)  # a simulated device: the change just works
+    assert result["success"] and "now reached on 10.0.0.50" in result["results"][0]["output"]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.50"
+    assert kb.get_device("SW1")["interfaces"] == ["Vlan1 10.0.0.50/24", "Ethernet0/1"]
+
+
+class DroppingDriver:
+    """A real device: changing the IP we are connected to drops our SSH session."""
+    def __enter__(self):
+        return self
+
+    def __exit__(self, *error):
+        return False
+
+    def get_config(self):
+        return "hostname SW1"
+
+    def send_config(self, commands):
+        raise ConnectionError("Socket is closed")
+
+
+def test_dropped_connection_is_ok_if_the_new_ip_answers(kb, monkeypatch):
+    from ibn.control import controller
+    monkeypatch.setattr(controller, "get_driver", lambda device: DroppingDriver())
+    monkeypatch.setattr(controller, "ping", lambda ip: ip == "10.0.0.50")  # answers on the new IP
+    result = change_management_ip(kb)
+    assert result["success"] and "dropped" in result["results"][0]["output"]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.50"
+
+
+def test_dropped_connection_fails_if_the_new_ip_is_silent(kb, monkeypatch):
+    from ibn.control import controller
+    monkeypatch.setattr(controller, "get_driver", lambda device: DroppingDriver())
+    monkeypatch.setattr(controller, "ping", lambda ip: False)  # nobody answers on the new IP
+    result = change_management_ip(kb)
+    assert not result["success"] and result["results"][0]["status"] == "failed"
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"  # we don't save an IP that doesn't work
+
+
+def test_rollback_moves_the_device_back_to_its_old_ip(kb):
+    # SW1 moves to 10.0.0.50, then R1 fails: the rollback puts 10.0.0.2 back on SW1,
+    # and the program must go back to 10.0.0.2 too (not keep the new IP).
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24", "Ethernet0/1"])
+    llm = FakeLLM({"summary": "x", "changes": [
+        change("SW1", ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"],
+               ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]),
+        change("R1", ["description invalid"], ["no description"]),  # the simulated device refuses "invalid"
+    ]})
+    result = pipeline.approve(pipeline.propose("move SW1, break R1", kb, llm)["id"], kb)
+    assert not result["success"]
+    assert ("SW1", "rolled back") in [(r["device"], r["status"]) for r in result["results"]]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"
+    assert kb.get_device("SW1")["interfaces"] == ["Vlan1 10.0.0.2/24", "Ethernet0/1"]
+
+
+def test_rollback_follows_a_real_device_back_to_its_old_ip(kb, monkeypatch):
+    # Real devices: every send drops the connection (R1's too, so R1 fails and we roll back).
+    # SW1 answers on the new IP, then (after the rollback) on the old one.
+    from ibn.control import controller
+    monkeypatch.setattr(controller, "get_driver", lambda device: DroppingDriver())
+    monkeypatch.setattr(controller, "ping", lambda ip: ip in ("10.0.0.50", "10.0.0.2"))
+    kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2/24"])
+    llm = FakeLLM({"summary": "x", "changes": [
+        change("SW1", ["interface Vlan1", "ip address 10.0.0.50 255.255.255.0"],
+               ["interface Vlan1", "ip address 10.0.0.2 255.255.255.0"]),
+        change("R1", ["hostname R1-new"], ["hostname R1"]),
+    ]})
+    result = pipeline.approve(pipeline.propose("move SW1, rename R1", kb, llm)["id"], kb)
+    statuses = [(r["device"], r["status"]) for r in result["results"]]
+    assert ("SW1", "applied") in statuses and ("R1", "failed") in statuses
+    assert ("SW1", "rolled back") in statuses
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"
+
+
+def test_dry_run_does_not_move_the_device(kb, monkeypatch):
+    from ibn import settings
+    monkeypatch.setattr(settings, "DRY_RUN", True)
+    assert change_management_ip(kb)["success"]
+    assert kb.get_device("SW1")["ip"] == "10.0.0.2"  # nothing was sent, so nothing moved
+
+
+def test_approved_warnings_are_saved_in_the_history(kb):
+    # VLAN 10 is "HR"; renaming it gives a warning; the user approves anyway
+    kb.record_change("SW1", {"time": "2020-01-01T10:00:00", "type": "config", "success": True,
+                             "commands": ["vlan 10", "name HR"]})
+    llm = FakeLLM({"summary": "x", "changes": [change("SW1", ["vlan 10", "name Sales"], ["vlan 10", "name HR"]),
+                                              change("R1", ["interface Loopback9", "description test"],
+                                                     ["no interface Loopback9"])]})
+    plan = pipeline.propose("Create VLAN 10 named Sales on SW1 and R1", kb, llm)
+    assert pipeline.approve(plan["id"], kb)["success"]
+    sw1, r1 = kb.get_history("SW1")[-1], kb.get_history("R1")[-1]
+    assert "SW1: VLAN 10 already exists on SW1 as 'HR': this plan renames it to 'Sales'" in sw1["warnings"]
+    assert all(w.startswith("SW1") for w in sw1["warnings"])
+    assert r1["warnings"] == []  # each device keeps only its own warnings
 
 
 def test_plan_can_only_be_approved_once(kb):
@@ -283,6 +732,38 @@ LoopBack0                         unassigned           up         up(s)"""
     next
 end"""
     assert get_vendor("fortigate").parse_interfaces(forti) == ["port1 192.168.1.99", "port2 unassigned"]
+
+
+def test_cisco_interfaces_are_read_with_their_mask():
+    output = """Ethernet0/0 is up, line protocol is up
+  Internet address is 10.1.2.1/24
+  Broadcast address is 255.255.255.255
+Ethernet0/1 is administratively down, line protocol is down
+  Internet protocol processing disabled
+Loopback0 is up, line protocol is up
+  Internet address is 10.0.0.1/32
+  Secondary address 10.9.9.9/24"""
+    assert get_vendor("cisco_ios").show_interfaces == "show ip interface"
+    assert get_vendor("cisco_ios").parse_interfaces(output) == [
+        "Ethernet0/0 10.1.2.1/24", "Ethernet0/1 unassigned", "Loopback0 10.0.0.1/32"]
+
+
+def test_vlans_are_read_from_real_switches_and_nxos_interfaces_still_work():
+    output = """VLAN Name                             Status    Ports
+---- -------------------------------- --------- -------------------------------
+1    default                          active    Et0/0, Et0/1, Et0/2
+                                                Et0/3
+10   HR                               active
+1002 fddi-default                     act/unsup"""
+    for vendor in ("cisco_ios", "cisco_nxos", "arista_eos"):
+        assert get_vendor(vendor).show_vlans == "show vlan brief"
+        assert get_vendor(vendor).parse_vlans(output) == ["1 default", "10 HR", "1002 fddi-default"]
+    assert get_vendor("cisco_ios").parse_vlans("% Invalid input detected at '^' marker.") == []  # a router
+    # NX-OS prints "show ip interface" differently: it keeps the brief table
+    nxos = get_vendor("cisco_nxos")
+    assert nxos.show_interfaces == "show ip interface brief"
+    assert nxos.parse_interfaces("Ethernet1/1     10.1.1.1        protocol-up/link-up/admin-up") == [
+        "Ethernet1/1 10.1.1.1"]
 
 
 def test_wrapper_lines_are_cleaned_per_vendor():
@@ -467,8 +948,8 @@ def test_simulated_devices_are_always_up(kb, monkeypatch):
 
 def test_a_down_device_is_only_a_warning_in_dry_run(kb, monkeypatch):
     from ibn import settings
-    kb.update_device("R1", state="down")
-    plan = {"changes": [change("R1", ["vlan 10"], ["no vlan 10"])]}
+    kb.update_device("SW1", state="down")
+    plan = {"changes": [change("SW1", ["vlan 10"], ["no vlan 10"])]}
     assert not validate(plan, kb)["ok"]
     monkeypatch.setattr(settings, "DRY_RUN", True)
     result = validate(plan, kb)
@@ -735,7 +1216,8 @@ def test_ip_conflicts(kb):
         return {"changes": [change("R1", ["interface Loopback5", f"ip address {address}"],
                                    ["no interface Loopback5"])]}
     assert validate(loopback("5.5.5.5 255.255.255.255"), kb)["ok"]
-    assert "already used by R2 (Ethernet0/0)" in validate(loopback("10.1.2.2 255.255.255.255"), kb)["errors"][0]
+    errors = " ".join(validate(loopback("10.1.2.2 255.255.255.255"), kb)["errors"])
+    assert "already used by R2 (Ethernet0/0)" in errors or "already used on R2 Ethernet0/0" in errors
     assert "overlaps Ethernet0/0" in validate(loopback("10.1.2.9 255.255.255.0"), kb)["errors"][0]
     assert "network address" in validate(loopback("10.9.9.0 255.255.255.0"), kb)["errors"][0]
     errors = " ".join(validate(loopback("10.9.9.1 255.0.255.0"), kb)["errors"])
@@ -1010,7 +1492,7 @@ def test_negative_empty_plan_is_refused(kb):
 # ---- Syntax (pre-validation): known commands and possible values ----
 
 def syntax_errors(kb, commands, rollback=("no description",), type="config"):
-    return validate({"changes": [change("R1", list(commands), list(rollback), type)]}, kb)["errors"]
+    return validate({"changes": [change("SW1", list(commands), list(rollback), type)]}, kb)["errors"]
 
 
 def test_syntax_accepts_normal_cisco_commands(kb):
@@ -1028,15 +1510,16 @@ def test_syntax_refuses_typos(kb):
 
 
 def test_syntax_refuses_impossible_values(kb):
-    assert "10.0.0.300 is not a valid IP address" in syntax_errors(kb, ["ip address 10.0.0.300 255.255.255.0"])[0]
-    assert "255.0.255.0 is not a valid mask" in syntax_errors(kb, ["ip address 10.0.0.1 255.0.255.0"])[0]
-    assert "(use 192.168.3.0)" in syntax_errors(kb, ["ip route 192.168.3.1 255.255.255.0 10.0.0.2"])[0]
-    assert "VLAN 5000 is outside 1-4094" in syntax_errors(kb, ["vlan 5000"])[0]
-    assert "is not a valid IP address" in syntax_errors(kb, ["ping 10.0.0.300"], [], "check")[0]
+    # (other checks may report the same problem in their own words: look in all the errors)
+    assert "10.0.0.300 is not a valid IP address" in " ".join(syntax_errors(kb, ["ip address 10.0.0.300 255.255.255.0"]))
+    assert "255.0.255.0 is not a valid mask" in " ".join(syntax_errors(kb, ["ip address 10.0.0.1 255.0.255.0"]))
+    assert "(use 192.168.3.0)" in " ".join(syntax_errors(kb, ["ip route 192.168.3.1 255.255.255.0 10.0.0.2"]))
+    assert "VLAN 5000 is outside 1-4094" in " ".join(syntax_errors(kb, ["vlan 5000"]))
+    assert "is not a valid IP address" in " ".join(syntax_errors(kb, ["ping 10.0.0.300"], [], "check"))
 
 
 def test_syntax_checks_the_rollback_too(kb):
-    assert "is not a known" in syntax_errors(kb, ["vlan 10"], ["no vlna 10"])[0]
+    assert "is not a known" in " ".join(syntax_errors(kb, ["vlan 10"], ["no vlna 10"]))
 
 
 def test_syntax_list_is_skipped_for_vendors_without_one(tmp_path):

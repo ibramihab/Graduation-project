@@ -133,6 +133,154 @@ Every change to the project is listed here, so nothing surprises you.
   requests in one sentence become steps in order. New Cisco examples: static route, OSPF on two routers,
   device described by its link. File: `ibn/vendors/cisco_ios.py`.
 - 🟢 More negative tests (idea 5) and tests for all of the above: `tests/test_ibn.py`.
+### The validation report is saved in the history
+- 🟢 The warnings shown when the user approved a plan are saved with the change: new field `warnings` in each
+  history entry (`control/controller.py`, each device keeps its own), taken from the last check at approval
+  (`pipeline.py`, shared file). The History view shows them under "Warnings when approved"
+  (`interface/templates/index.html`, Interface layer). Older history entries simply have none.
+  Test: `test_approved_warnings_are_saved_in_the_history`.
+
+### Removed: "Set the IP" requests written by the program
+- 🔴 `intent/translator.py` is back to how it is on `main`: no more program-written plans for
+  "Set the IP of interface ... on ... to ..." (English only, one wording, and it bypassed the AI, which stays the
+  base of the project). The plan field `written_by` is gone, and `pipeline.py` no longer checks it. Every request
+  goes to the AI again; the validation checks are unchanged.
+
+### Switch commands on a router are refused
+- 🟢 `validation/validator.py`: `switchport ...`, `vlan 10`, `spanning-tree ...` or `interface Vlan10` on a router is
+  an error (a real router answers "% Invalid input", so the plan would fail halfway). A router = named like one
+  (R1, rtr-2, router3; same guess as the web page) and not a switch: a device whose VLANs were read at
+  "Find links" counts as a switch, whatever its name. The AI gets the error and a second try.
+  Test: `test_switch_commands_on_a_router_are_refused`.
+
+### Warning when the plan changes a device the user didn't name
+- 🟢 `validation/validator.py`: if the request names devices (R1, sw1...) and the plan CHANGES another one, a
+  warning: "R1: you didn't name R1 in your request, but the plan changes it". Only device names are compared,
+  so it works in any language. No warning when no device is named, or for read-only (check) steps.
+  Test: `test_changing_a_device_the_user_didnt_name_warns`.
+
+### Validation warns about missing references
+- 🟢 `validation/validator.py`: warnings when a command points at something the device may not have
+  (what it has = its last backup + the program's successful changes + this plan):
+  - `ip access-group 101 in` / `access-class 10 in` with no access list 101 / 10 (Cisco then filters nothing);
+  - `switchport access vlan 60` with no VLAN 60 (a Cisco switch creates it by itself, with no name);
+  - `ip route ... 10.9.9.1` when no interface is in 10.9.9.x (needs interfaces saved with masks).
+  Test: `test_missing_references_warn`.
+
+### Warning before renaming a VLAN that already exists
+- 🟢 Infrastructure: "Find links & IPs" also reads the VLANs of switches (`show vlan brief` on Cisco IOS, NX-OS,
+  Arista) and saves them on the device: new fields `vlans` (`["10 HR", "20 Sales"]`) and `vlans_read_at`.
+  New optional driver method `get_vlans()` (`drivers/base.py`, `drivers/cli.py`); new vendor fields `show_vlans`
+  and `parse_vlans` (`vendors/base.py`). Older drivers without `get_vlans` still work.
+- 🟢 `validation/validator.py`: "vlan 10" + "name Sales" while VLAN 10 is "HR" gets a warning
+  ("VLAN 10 already exists on sw1 as 'HR': this plan renames it to 'Sales'"). Known VLANs = what the switch said,
+  plus the program's own successful changes since then (works on simulated devices too, from the history).
+- 🟡 `vendors/cisco_nxos.py`: back to `show ip interface brief` (NX-OS prints `show ip interface` differently, so the
+  mask change for IOS had broken NX-OS interface reading).
+  Tests: `test_renaming_an_existing_vlan_warns`, `test_vlans_are_read_from_real_switches_and_nxos_interfaces_still_work`.
+
+### Validation refuses IP conflicts
+- 🟢 `validation/validator.py`: compared with the IPs the knowledge base knows (from "Find links & IPs" or typed
+  by hand), a plan is refused if it gives an IP that's already on another device or interface, reuses another
+  device's management IP, gives the same new IP to two devices, or puts two interfaces of ONE device in
+  overlapping subnets (a real Cisco refuses that: "% ... overlaps with ..."). Moving an IP in one plan
+  (`no ip address` first) is fine. Reads Cisco/Arista/Huawei (`ip address`), FortiGate (`edit` + `set ip`) and
+  MikroTik (`address=... interface=...`); works with interfaces saved with or without a mask.
+  Test: `test_ip_conflicts_are_refused`.
+
+### Ready for real Cisco devices (EVE-NG): masks saved, and the lab's "door" is protected
+- 🟡 `vendors/cisco_ios.py` (Infrastructure): "Find links & IPs" now reads `show ip interface` instead of
+  `show ip interface brief`, so Cisco interfaces are saved WITH their mask (`Ethernet0/0 10.1.2.1/24`). The
+  rollbacks that put an old IP back need it. Run "Find links & IPs" again on real devices to refresh them.
+  Test: `test_cisco_interfaces_are_read_with_their_mask`.
+- 🟢 `validation/validator.py`: a warning when a change (shutdown, new IP, no IP) hits the interface that connects
+  this PC to the lab (its subnet holds this PC's IP, e.g. R2 e0/3 192.168.43.2/24 with the PC on 192.168.43.1):
+  every device is reached through it. Test: `test_the_door_to_the_lab_warns`.
+
+### Simple "set the IP" requests are written by the program, without the AI
+- 🟢 `intent/translator.py`: "Set the IP of interface Ethernet0/1 on R1 to 10.0.12.0/31" (or "... to 10.5.5.1
+  with mask 255.255.255.0") on a Cisco IOS or simulated device is turned into commands by the program itself:
+  `interface Ethernet0/1` / `ip address 10.0.12.0 255.255.255.254`. Always right, instant, and the user's IP
+  exactly (the small AI refused valid /31 addresses). Short names (`e0/1`) become the saved interface name, and
+  the rollback puts the interface's old IP back when it's known. Other wordings and vendors go to the AI as
+  before; the plan is validated like any other. The plan has a new field `"written_by": "program"`.
+- 🟡 `pipeline.py` (shared file): no second try for a plan the program wrote (it would be the same).
+  Test: `test_simple_ip_request_is_written_by_the_program`.
+
+### When the AI refuses a request with valid IPs
+- 🔴 Removed: the rules "keep the user's IP / the /31 rule" in the AI's instructions (`intent/translator.py`). The
+  small local AI ignored them.
+- 🟡 `pipeline.py` (shared file): if the request has IPs the program checked as valid and the AI made no plan,
+  it's asked once more ("these IPs are valid, make the plan with them exactly as written"). If it still makes no
+  plan, its reasons are hidden (they were wrong and suggested other IPs) and the message is ours: "The AI couldn't
+  make a plan for this request. Your IP addresses (...) are valid. Nothing was changed." Requests without IPs
+  (VLANs...) work as before. Test: `test_refused_valid_ip_gets_a_second_try_and_our_words`.
+
+### A wrong IP in the request is refused in the program's own words
+- 🟢 `validation/validator.py`: `request_problems()` checks the IPs the user typed (300.1.1.1, 10.5.5, a broken
+  mask, or a network/broadcast address given to an interface). If one is wrong, the errors are only
+  "Your request: ...", whatever the AI wrote. Network addresses in route/OSPF requests are fine.
+- 🟡 `pipeline.py` (shared file): when the request itself is wrong, the AI is not asked a second time (it would
+  only guess a new value, and it's slow on a local model), its plan is hidden, and the summary is ours:
+  "This can't be done. 10.1.1.0/24 uses 10.1.1.0, the network address of 10.1.1.0/24...".
+  Test: `test_wrong_ip_in_the_request_is_refused_in_our_words`.
+
+### The AI says what's wrong, without suggesting another value
+- 🟡 `pipeline.py` (shared file): the second-try rule now says to explain why the request can't be done and the
+  rule it breaks, but NOT to suggest a replacement (it used to answer "the IP should be 10.1.1.1/24"). The user
+  decides the new value.
+
+### The AI may not change the user's IP addresses
+- 🟢 `validation/validator.py`: every new IP address the user typed must appear in the plan's commands. The AI
+  once turned "10.1.1.0/24" into `ip address 10.1.1.1` without saying so. Now that's an error, so the AI's second
+  try must keep the IP (then the IP check says why it's wrong) or return no changes and explain. Masks and IPs
+  the network already has are not checked.
+  Test: `test_the_ai_may_not_change_the_users_values`.
+
+### Validation refuses invalid IP addresses
+- 🟢 `validation/validator.py`: `ip address` (and FortiGate `set ip`) must have a real IP (4 numbers 0-255), a
+  real mask (`255.0.255.0` and the ACL wildcard `0.0.0.255` are refused), and not the network or broadcast address
+  of its subnet (`10.1.1.0/24`, `10.1.1.255/24`). Masks can be `255.255.255.0`, `24` (Huawei) or `/24` (Arista).
+  Test: `test_invalid_ip_address_is_refused`.
+
+### Validation checks the rollback of a management-IP change
+- 🟢 `validation/validator.py`: the AI once "undid" a new management IP with `no interface Vlan1` (that would
+  leave the device with no way in). Now it's an error if a rollback deletes the management interface, or if a
+  plan changes the management IP and the rollback doesn't put the old IP back. The error tells the AI the right
+  rollback (`interface Vlan1` / `ip address 10.0.1.11 255.255.255.0`), so its second try can fix it.
+  Test: `test_rollback_must_not_cut_the_device_off`.
+
+### The program follows a device to its new management IP
+- 🟢 `control/controller.py`: when an applied plan gives a device's management interface a new IP, the program
+  saves the new IP (and the interface line, e.g. `Vlan1 10.0.1.50/24`) by itself. On a real device the SSH
+  session drops at that moment: that is now expected, so the program pings the new IP; answers = success,
+  silent = failure (rollback as usual). Nothing moves with `DRY_RUN=true`.
+- 🟡 `validation/validator.py`: the management-IP helpers are now functions Control uses too
+  (`management_interface`, `new_management_ip`); the warning text says the program will follow the new IP.
+- If a LATER device in the same plan fails, the rollback puts the old IP back on the device, and the program
+  follows it back to the old IP the same way (ping, then save).
+  Tests: `test_new_management_ip_is_saved_automatically`, `test_dropped_connection_*`,
+  `test_rollback_*_back_to_its_old_ip`, `test_dry_run_does_not_move_the_device`.
+
+### Warning before cutting the program off from a device
+- 🟢 `validation/validator.py`: the program reaches each device on its management IP. If that IP is on one of the
+  device's known interfaces (e.g. `Vlan1 10.0.1.11/24`), a `shutdown`, `no ip address` or a new `ip address` on
+  that interface now gets a warning: the program (and the rollback) would lose the device. Only a warning, the
+  user may really want it. Test: `test_change_on_the_management_interface_warns`.
+- 🟡 Same check: an IP typed with spaces around it (`"   10.0.1.11"`) is still recognized.
+
+### The AI no longer guesses when the request itself is wrong
+- 🟡 `pipeline.py` (shared file): when a plan is rejected, the second try now tells the AI to fix only its own
+  mistakes. If the user's request is impossible (e.g. VLANs 20-5000), it must return no changes and explain the
+  allowed values, instead of quietly changing them (it used to turn 5000 into 500). Test:
+  `test_ai_is_told_not_to_guess_the_users_values`.
+
+### Validation refuses invalid VLAN numbers
+- 🟢 `validation/validator.py`: a `vlan N` (also `switchport access vlan N`, FortiGate `set vlanid N`) with N
+  outside 1-4094 is an error, so a plan like "Create VLAN 5000" is blocked before it reaches a device.
+  Test: `test_invalid_vlan_number_is_refused`.
+- 🟡 The VLAN check also reads lists: `switchport trunk allowed vlan add 4095`, `allowed vlan 10,20-5000`,
+  Huawei `vlan batch 10 to 20`, and sub-interfaces `encapsulation dot1Q 5000`.
 
 ### Type a device's interfaces by hand
 - 🟢 Tools > Add / edit a device: an "Interfaces" box (one per line, e.g. `e0/0 192.168.1.1/24`), for devices

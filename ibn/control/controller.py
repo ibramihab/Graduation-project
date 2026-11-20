@@ -15,12 +15,18 @@ Post-validation: when every config step worked, we run each step's "verify" comm
 (ping, show...) to check the intent REALLY happened. If one fails (e.g. the ping gets
 no reply), the intent was not reached, so we roll everything back, like any failure.
 Everything is written to the device's history in the knowledge base.
+
+Changing a device's management IP (the IP we use to reach it): our SSH session drops in
+the middle, which is expected. So instead of calling it a failure, we ping the new IP.
+If the device answers there, the change worked and the knowledge base gets the new IP.
 """
 import re
 from datetime import datetime
 
 from .. import settings
+from ..infrastructure.discovery import ping
 from ..infrastructure.drivers import get_driver
+from ..validation.validator import management_interface, new_management_ip
 from ..vendors import get_vendor
 
 
@@ -37,9 +43,7 @@ def apply_plan(plan: dict, kb) -> dict:
             if settings.DRY_RUN:
                 output = "DRY RUN - nothing was sent:\n" + "\n".join(change["commands"])
             else:
-                with get_driver(device) as driver:
-                    kb.save_backup(device["name"], driver.get_config())
-                    output = driver.send_config(change["commands"])
+                output = _send(device, change["commands"], kb)
             done.append(change)
             results.append({"device": device["name"], "status": "applied", "output": output})
         except Exception as error:
@@ -62,6 +66,34 @@ def apply_plan(plan: dict, kb) -> dict:
     success = not any(r["status"] == "check failed" for r in results)
     _record(plan, results, kb, success=success)
     return {"success": success, "results": results}
+
+
+def _send(device: dict, commands: list[str], kb, backup: bool = True) -> str:
+    """(Back up the config,) send the commands. Follows the device if they change its management IP.
+    Used to apply a change (with a backup) and to roll it back (backup=False)."""
+    moving_to = new_management_ip(device, commands)  # e.g. ("10.0.1.50", 24) or None
+    try:
+        with get_driver(device) as driver:
+            if backup:
+                kb.save_backup(device["name"], driver.get_config())
+            output = driver.send_config(commands)
+    except Exception:
+        # Losing the connection is expected when we change the IP we are connected to.
+        if not (moving_to and ping(moving_to[0])):
+            raise  # a real failure: the caller rolls back
+        output = "The connection dropped while changing the management IP (expected)."
+    if moving_to:
+        _move_device(device, *moving_to, kb)
+        output += f"\n{device['name']} is now reached on {moving_to[0]} (saved in the program)."
+    return output
+
+
+def _move_device(device: dict, ip: str, prefix: int, kb) -> None:
+    """Save the new management IP, and update the management interface's line too."""
+    interface = management_interface(device)
+    interfaces = [f"{interface} {ip}/{prefix}" if i.split()[0] == interface else i
+                  for i in device.get("interfaces") or []]
+    kb.update_device(device["name"], ip=ip, interfaces=interfaces)
 
 
 def _check(device: dict, change: dict) -> dict:
@@ -116,8 +148,8 @@ def _rollback(changes: list[dict], kb) -> list[dict]:
         if not change.get("rollback") or settings.DRY_RUN:
             continue
         try:
-            with get_driver(device) as driver:
-                output = driver.send_config(change["rollback"])
+            # The rollback may put the OLD management IP back: _send follows the device there too.
+            output = _send(device, change["rollback"], kb, backup=False)
             results.append({"device": device["name"], "status": "rolled back", "output": output})
         except Exception as error:
             results.append({"device": device["name"], "status": "ROLLBACK FAILED - check by hand",
@@ -127,7 +159,9 @@ def _rollback(changes: list[dict], kb) -> list[dict]:
 
 def _record(plan: dict, results: list[dict], kb, success: bool) -> None:
     time = datetime.now().isoformat(timespec="seconds")
+    warnings = plan.get("validation", {}).get("warnings", [])
     for change in plan["changes"]:
+        name = change["device"]
         kb.record_change(change["device"], {
             "time": time,
             "intent": plan.get("intent", ""),
@@ -135,4 +169,7 @@ def _record(plan: dict, results: list[dict], kb, success: bool) -> None:
             "commands": change["commands"],
             "success": success,
             "results": [r for r in results if r["device"] == change["device"]],
+            # The validation report: warnings about this device that were shown when the user approved
+            # ("sw1: VLAN 10 already exists...", "R1 is a single point of failure...")
+            "warnings": [w for w in warnings if w.startswith((f"{name}:", f"{name} "))],
         })

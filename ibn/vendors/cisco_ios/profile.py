@@ -1,5 +1,28 @@
 """Cisco IOS / IOS-XE / IOL (routers and switches)."""
+import re
+
 from ..base import VendorProfile
+
+
+def ip_interfaces_with_mask(output: str) -> list[str]:
+    """Read "show ip interface" (it has the mask; "show ip interface brief" doesn't):
+        Ethernet0/0 is up, line protocol is up
+          Internet address is 10.1.2.1/24              -> "Ethernet0/0 10.1.2.1/24"
+        Ethernet0/1 is administratively down, ...
+          Internet protocol processing disabled         -> "Ethernet0/1 unassigned"
+    The mask is needed to put an interface's old IP back in a rollback."""
+    interfaces = {}
+    name = None
+    for line in output.splitlines():
+        header = re.match(r"(\S+\d) is ", line)  # a line that starts a new interface
+        if header:
+            name = header[1]
+            interfaces[name] = "unassigned"
+        elif name and interfaces[name] == "unassigned":
+            address = re.match(r"\s+Internet address is (\S+)", line)
+            if address:
+                interfaces[name] = address[1]
+    return [f"{n} {ip}" for n, ip in interfaces.items()]
 
 PROFILE = VendorProfile(
     name="cisco_ios",
@@ -7,7 +30,9 @@ PROFILE = VendorProfile(
 
     netmiko_type="cisco_ios",
     show_config="show running-config",
-    show_interfaces="show ip interface brief",
+    show_interfaces="show ip interface",
+    parse_interfaces=ip_interfaces_with_mask,
+    show_vlans="show vlan brief",  # on a router it just answers "% Invalid input": no VLANs
     neighbors="cdp",
     error_markers=["% Invalid", "% Incomplete", "% Ambiguous", "% Unknown"],
 

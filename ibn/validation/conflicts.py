@@ -119,6 +119,8 @@ def _new_addresses(step, errors) -> list:
                 if not setting.startswith("ip address") or (interface, line) in old:
                     continue
                 words = line.split()
+                if len(words) > 2 and not words[2][0].isdigit():
+                    continue  # "ip address dhcp" / "negotiated": the address comes from elsewhere
                 mask = words[3] if len(words) > 3 and words[3].lower() not in ("secondary", "sub") else None
                 try:
                     ip, net = read_address(words[2], mask)
@@ -183,9 +185,14 @@ def management_interface_changed(step) -> str | None:
         section = f"interface {interface}"
         changed = [s for (sec, s) in set(old) | set(new)
                    if sec == section and old.get((sec, s)) != new.get((sec, s))]
+        # an IP change is only risky if the management address is gone afterwards
+        # (the same IP again, or an extra secondary IP, keeps the device reachable)
+        address_kept = interface in step.after.interfaces() and \
+            any(str(ip) == address for ip, _, _ in step.after.addresses(interface))
         risky = [s for s in changed if s is None  # the interface is deleted
                  or (s == "shutdown" and (new.get((section, s)) or "").lower() == "shutdown")
-                 or s.startswith(("ip address", "switchport", "port "))]
+                 or (s.startswith("ip address") and not address_kept)
+                 or s.startswith(("switchport", "port "))]
         if risky:
             return step.before.display(section)
     return None

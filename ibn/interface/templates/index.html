@@ -789,6 +789,8 @@ async function history_(name) {
       ${statuses ? `<span class="when"> (${esc(statuses)})</span>` : ""}
       <div dir="auto"><i>"${esc(c.intent)}"</i></div>
       <ul>${(c.commands || []).map(cmd => `<li>${esc(cmd)}</li>`).join("")}</ul>
+      ${(c.warnings || []).length ? `<details><summary>Warnings when approved (${c.warnings.length})</summary>
+        <ul>${c.warnings.map(w => `<li>⚠ ${esc(w)}</li>`).join("")}</ul></details>` : ""}
       ${output ? `<details><summary>Show device output</summary><pre>${esc(output)}</pre></details>` : ""}
     </div>`;
   }

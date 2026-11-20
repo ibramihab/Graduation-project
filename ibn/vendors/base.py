@@ -29,6 +29,18 @@ def two_column_interfaces(output: str) -> list[str]:
     return interfaces
 
 
+def vlan_table(output: str) -> list[str]:
+    """Read "show vlan brief" (Cisco IOS, NX-OS, Arista): number + name of each VLAN.
+        "10   HR                               active    Et0/1"  -> "10 HR"
+    Lines that don't start with a VLAN number (headers, "----", ports on a 2nd line) are skipped."""
+    vlans = []
+    for line in output.splitlines():
+        parts = line.split()
+        if len(parts) >= 2 and parts[0].isdigit():
+            vlans.append(f"{parts[0]} {parts[1]}")
+    return vlans
+
+
 @dataclass
 class VendorProfile:
     name: str                        # the "vendor" value of a device, e.g. "cisco_ios"
@@ -40,6 +52,8 @@ class VendorProfile:
     show_interfaces: str = ""        # lists interfaces and their IPs ("" = can't)
     parse_interfaces: Callable[[str], list[str]] = two_column_interfaces
     neighbors: str = ""              # how to find neighbors: "cdp" ("" = not supported yet)
+    show_vlans: str = ""             # lists the VLANs of a switch ("" = can't)
+    parse_vlans: Callable[[str], list[str]] = vlan_table  # -> ["10 HR", "20 Sales"]
     error_markers: list[str] = field(default_factory=list)  # text = "command rejected"
 
     # ---- validation (safety rules) ----

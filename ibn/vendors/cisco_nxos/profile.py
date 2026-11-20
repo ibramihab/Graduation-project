@@ -1,6 +1,7 @@
 """Cisco NX-OS (Nexus switches). Same safety rules as IOS, different examples."""
 from dataclasses import replace
 
+from ..base import two_column_interfaces
 from ..cisco_ios import PROFILE as IOS
 
 PROFILE = replace(
@@ -8,6 +9,9 @@ PROFILE = replace(
     name="cisco_nxos",
     description="Cisco NX-OS",
     netmiko_type="cisco_nxos",
+    # NX-OS prints "show ip interface" differently from IOS: keep the brief table (no mask)
+    show_interfaces="show ip interface brief",
+    parse_interfaces=two_column_interfaces,
     wrapper_lines=IOS.wrapper_lines | {"copy running-config startup-config"},
     ai_hints="""\
 - Like Cisco IOS: config steps run in configuration mode, do NOT add "configure terminal" or "end".
