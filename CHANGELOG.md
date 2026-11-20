@@ -7,6 +7,10 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### Clearer message when the AI's second try also fails
+- 🟡 `index.html` only: "The AI's first plan failed the safety checks, so it corrected it" was shown even when the
+  corrected plan still failed. Now it says "The AI tried twice, but the plan still fails the safety checks".
+
 ### Phased exam removed
 - 🔴 Removed the phased exam for the AI (`ibn/intent/evaluate.py`, `tests/intents.json`, its 2 tests and its
   README section), as asked. Everything else stays: questions, post-validation, syntax check, Cisco examples.
