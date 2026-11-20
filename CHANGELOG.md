@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### One check per problem (validation clean-up after merging everyone's work)
+- 🟡 `ibn/validation/validator.py`, `conflicts.py`, `dependencies.py`: checks that reported the same problem 2-4 times
+  now report it once (kept the clearest one): VLAN number, IP/mask/network address, IP overlap, access VLAN,
+  undefined ACL, next hop, management interface. The kept checks also read the config backup (masks, VLANs).
+
 ### 35 AI tests (was 16)
 - 🟢 `evaluation/tests.json`: 19 new tests: backup and removed routes, OSPF on three routers, passive interface,
   telnet ACL, "only X may open the web server", Arabic ACL, DHCP relay, interface IP, shutdown, loopback,

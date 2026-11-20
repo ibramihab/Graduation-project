@@ -275,33 +275,30 @@ def _syntax_errors(command: str, profile) -> list[str]:
 
 
 def _value_errors(command: str) -> list[str]:
-    """Values that can't be right: IP parts above 255, broken masks, a route's network
-    with host bits, VLAN numbers outside 1-4094."""
+    """Values that can't be right in routes, pings, access lists...: IP parts above 255,
+    broken route masks, a route's network with host bits.
+    (Interface addresses and VLAN numbers are checked once, by _ip_problem and VLAN_LIST.)"""
     errors = []
     line = command.strip().lower()
-    if line.startswith("no ip address"):
-        return []  # removing an address: the device clears it whatever value is written
+    if re.match(r"^(no\s+)?ip address\b", line):
+        return []  # an interface address: _ip_problem checks it (all vendors' formats)
     for ip in re.findall(r"\b\d+\.\d+\.\d+\.\d+\b", line):
         if any(int(part) > 255 for part in ip.split(".")):
             errors.append(f"'{command}': {ip} is not a valid IP address")
     if errors:
         return errors
     # "ip address 10.0.0.1 255.255.255.0" / "ip route 192.168.3.0 255.255.255.0 10.0.0.2"
-    match = re.match(r"^(?:no\s+)?ip (address|route) (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)", line)
+    match = re.match(r"^(?:no\s+)?ip route (\d+\.\d+\.\d+\.\d+) (\d+\.\d+\.\d+\.\d+)", line)
     if match:
-        kind, address, mask = match.groups()
+        address, mask = match.groups()
         try:
             ipaddress.IPv4Network(f"0.0.0.0/{mask}")
         except ValueError:
             return [f"'{command}': {mask} is not a valid mask"]
-        if kind == "route":
-            network = ipaddress.IPv4Network(f"{address}/{mask}", strict=False)
-            if str(network.network_address) != address:
-                errors.append(f"'{command}': {address} is not a network address for mask {mask} "
-                              f"(use {network.network_address})")
-    vlan = re.match(r"^(?:no\s+)?vlan (\d+)$", line)
-    if vlan and not 1 <= int(vlan[1]) <= 4094:
-        errors.append(f"'{command}': VLAN {vlan[1]} is outside 1-4094")
+        network = ipaddress.IPv4Network(f"{address}/{mask}", strict=False)
+        if str(network.network_address) != address:
+            errors.append(f"'{command}': {address} is not a network address for mask {mask} "
+                          f"(use {network.network_address})")
     return errors
 
 
@@ -378,8 +375,9 @@ def _vlan_rename_warnings(name: str, device: dict, commands: list[str], kb) -> l
 def known_vlans(device: dict, history: list[dict]) -> dict[str, str]:
     """{"10": "HR"}: what the switch said at "Find links & IPs", then the program's own
     successful changes since then (a failed plan was rolled back, so it doesn't count)."""
-    vlans = {}
-    for line in device.get("vlans") or []:
+    backup = [line.strip() for line in (device.get("last_config") or "").splitlines()]
+    vlans = {n: vlan_name for n, vlan_name in _vlan_names(backup).items() if vlan_name}  # its backup
+    for line in device.get("vlans") or []:  # what the switch said at "Find links" (newer)
         number, _, vlan_name = line.partition(" ")
         vlans[number] = vlan_name
     read_at = device.get("vlans_read_at", "")
@@ -480,7 +478,7 @@ def _reference_warnings(plan: dict, kb) -> list[str]:
         commands = change.get("commands", [])
         warnings += _acl_warnings(name, commands, lines)
         warnings += _access_vlan_warnings(name, device, commands, history, planned)
-        warnings += _next_hop_warnings(name, device, commands, planned)
+        warnings += _next_hop_warnings(name, device, commands, lines)
     return warnings
 
 
@@ -501,9 +499,7 @@ def _acl_warnings(name: str, commands: list[str], lines: list[str]) -> list[str]
 
 def _access_vlan_warnings(name, device, commands, history, planned) -> list[str]:
     """ "switchport access vlan 50" when VLAN 50 doesn't exist: a Cisco switch creates it by itself."""
-    known = set(known_vlans(device, history)) | {"1"}  # VLAN 1 always exists
-    backup = [line.strip() for line in (device.get("last_config") or "").splitlines()]
-    known |= {n for n, vlan_name in _vlan_names(backup).items() if vlan_name is not None}  # in its backup
+    known = set(known_vlans(device, history)) | {"1"}  # VLAN 1 always exists (known_vlans reads the backup too)
     known |= {n for n, vlan_name in _vlan_names(planned).items() if vlan_name is not None}
     warnings = []
     for command in commands:
@@ -515,8 +511,9 @@ def _access_vlan_warnings(name, device, commands, history, planned) -> list[str]
     return warnings
 
 
-def _next_hop_warnings(name, device, commands, planned) -> list[str]:
-    """ "ip route ... 10.9.9.1" when no interface of the device is in 10.9.9.x."""
+def _next_hop_warnings(name, device, commands, lines) -> list[str]:
+    """ "ip route ... 10.9.9.1" when no interface of the device is in 10.9.9.x.
+    lines = its backup + the program's earlier changes + this plan (they hold the masks)."""
     subnets = []
     for line in device.get("interfaces") or []:
         parts = line.split()
@@ -525,7 +522,7 @@ def _next_hop_warnings(name, device, commands, planned) -> list[str]:
                 subnets.append(ipaddress.IPv4Network(parts[1], strict=False))
             except ValueError:
                 pass
-    for _, ip, prefix, _ in _ips_in_commands(planned)[0]:  # interfaces this plan gives an IP
+    for _, ip, prefix, _ in _ips_in_commands(lines)[0]:  # interface IPs from the backup and the plan
         if prefix is not None:
             try:
                 subnets.append(ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False))
@@ -579,16 +576,28 @@ def _ip_conflict_errors(plan: dict, kb) -> list[str]:
                     where = f"{other_device} {other_interface}" if other_interface \
                         else f"{other_device} (its management IP)"
                     errors.append(f"{device}: {ip} is already used on {where}")
-                elif (other_device == device and other_interface and prefix is not None
-                      and other_prefix is not None
-                      and ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False).overlaps(
-                          ipaddress.IPv4Network(f"{other_ip}/{other_prefix}", strict=False))):
+                elif other_device == device and other_interface and _overlaps(ip, prefix, other_ip, other_prefix):
                     errors.append(f"{device}: {ip}/{prefix} on {interface} overlaps with {other_interface} "
-                                  f"({other_ip}/{other_prefix}): the device would refuse it")
+                                  f"({other_ip}{'/' + str(other_prefix) if other_prefix is not None else ''}): "
+                                  f"the device would refuse it")
             if not secondary:  # a new primary IP replaces the interface's old one
                 known = [k for k in known if not on_same_interface(k, interface)]
             known.append((device, interface, ip, prefix))
     return errors
+
+
+def _overlaps(ip, prefix, other_ip, other_prefix) -> bool:
+    """Do two interface subnets overlap? If the other mask is unknown (some devices don't
+    report it), we can still tell when the other IP falls inside the new subnet."""
+    if prefix is None:
+        return False
+    new = ipaddress.IPv4Network(f"{ip}/{prefix}", strict=False)
+    try:
+        if other_prefix is None:
+            return ipaddress.IPv4Address(other_ip) in new
+        return new.overlaps(ipaddress.IPv4Network(f"{other_ip}/{other_prefix}", strict=False))
+    except ValueError:
+        return False
 
 
 def _known_ips(kb) -> list[tuple]:

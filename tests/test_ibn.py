@@ -1203,7 +1203,7 @@ def test_vlan_conflicts(kb):
     other_switch = {"changes": [change("SW1", ["vlan 30", "name IT"], ["no vlan 30"])]}
     assert "VLAN 30 is called 'Finance' on SW3" in messages(validate(other_switch, kb))
     errors = " ".join(validate({"changes": [change("SW1", ["vlan 5000"], ["no vlan 5000"])]}, kb)["errors"])
-    assert "not valid" in errors or "outside 1-4094" in errors  # the conflict check or the syntax check
+    assert "invalid VLAN number 5000" in errors
     assert "default VLAN" in validate({"changes": [change("SW1", ["no vlan 1"], ["vlan 1"])]}, kb)["errors"][0]
 
 
@@ -1218,10 +1218,10 @@ def test_ip_conflicts(kb):
     assert validate(loopback("5.5.5.5 255.255.255.255"), kb)["ok"]
     errors = " ".join(validate(loopback("10.1.2.2 255.255.255.255"), kb)["errors"])
     assert "already used by R2 (Ethernet0/0)" in errors or "already used on R2 Ethernet0/0" in errors
-    assert "overlaps Ethernet0/0" in validate(loopback("10.1.2.9 255.255.255.0"), kb)["errors"][0]
-    assert "network address" in validate(loopback("10.9.9.0 255.255.255.0"), kb)["errors"][0]
+    assert "overlaps with Ethernet0/0" in " ".join(validate(loopback("10.1.2.9 255.255.255.0"), kb)["errors"])
+    assert "network address" in " ".join(validate(loopback("10.9.9.0 255.255.255.0"), kb)["errors"])
     errors = " ".join(validate(loopback("10.9.9.1 255.0.255.0"), kb)["errors"])
-    assert "not a valid IP" in errors or "not a valid mask" in errors  # the conflict check or the syntax check
+    assert "invalid mask" in errors
     same = {"changes": [change("R1", ["interface Ethernet0/1", "ip address 10.1.1.1 255.255.255.0"], [])]}
     assert "conflict" not in messages(validate(same, kb))  # its own address again: fine
 
@@ -1233,8 +1233,7 @@ def test_interface_conflicts(kb):
     kb.update_device("SW1", interfaces=["Vlan1 10.0.0.2"])  # 10.0.0.2 = how we reach SW1
     cut = {"changes": [change("SW1", ["interface Vlan1", "shutdown"], ["interface Vlan1", "no shutdown"])]}
     result = validate(cut, kb)
-    assert "holds the management address" in messages(result)
-    assert "could cut the connection" in messages(result)
+    assert "cuts the program's connection to SW1" in messages(result)
 
 
 def test_missing_prerequisites(kb):
@@ -1242,16 +1241,16 @@ def test_missing_prerequisites(kb):
     trunk_port = {"changes": [change("SW1", ["interface Ethernet0/1", "switchport access vlan 40"],
                                      ["interface Ethernet0/1", "no switchport access vlan"])]}
     text = messages(validate(trunk_port, kb))
-    assert "is a trunk port" in text and "VLAN 40 (access VLAN of Ethernet0/1) does not exist" in text
+    assert "is a trunk port" in text and "puts a port in VLAN 40" in text
     good = {"changes": [change("SW1", ["interface Ethernet0/0", "switchport mode access", "switchport access vlan 20"],
                                ["interface Ethernet0/0", "no switchport access vlan", "no switchport mode"])]}
     assert not validate(good, kb)["warnings"]
     acl = {"changes": [change("R1", ["interface Ethernet0/0", "ip access-group NOPE in"],
                               ["interface Ethernet0/0", "no ip access-group NOPE in"])]}
-    assert "ACL 'NOPE' is applied" in messages(validate(acl, kb))
+    assert "uses access list NOPE" in messages(validate(acl, kb))
     kb.update_device("R1", last_config="interface Ethernet0/0\n ip address 10.1.2.1 255.255.255.0\n!")
     route = {"changes": [change("R1", ["ip route 0.0.0.0 0.0.0.0 10.9.9.9"], ["no ip route 0.0.0.0 0.0.0.0 10.9.9.9"])]}
-    assert "not in any connected subnet" in messages(validate(route, kb))
+    assert "isn't on any network R1 is directly connected to" in messages(validate(route, kb))
     own = {"changes": [change("R1", ["ip route 0.0.0.0 0.0.0.0 10.1.2.1"], ["no ip route 0.0.0.0 0.0.0.0 10.1.2.1"])]}
     assert "own address" in validate(own, kb)["errors"][0]
 
@@ -1511,10 +1510,10 @@ def test_syntax_refuses_typos(kb):
 
 def test_syntax_refuses_impossible_values(kb):
     # (other checks may report the same problem in their own words: look in all the errors)
-    assert "10.0.0.300 is not a valid IP address" in " ".join(syntax_errors(kb, ["ip address 10.0.0.300 255.255.255.0"]))
-    assert "255.0.255.0 is not a valid mask" in " ".join(syntax_errors(kb, ["ip address 10.0.0.1 255.0.255.0"]))
+    assert "invalid IP address 10.0.0.300" in " ".join(syntax_errors(kb, ["ip address 10.0.0.300 255.255.255.0"]))
+    assert "invalid mask" in " ".join(syntax_errors(kb, ["ip address 10.0.0.1 255.0.255.0"]))
     assert "(use 192.168.3.0)" in " ".join(syntax_errors(kb, ["ip route 192.168.3.1 255.255.255.0 10.0.0.2"]))
-    assert "VLAN 5000 is outside 1-4094" in " ".join(syntax_errors(kb, ["vlan 5000"]))
+    assert "invalid VLAN number 5000" in " ".join(syntax_errors(kb, ["vlan 5000"]))
     assert "is not a valid IP address" in " ".join(syntax_errors(kb, ["ping 10.0.0.300"], [], "check"))
 
 

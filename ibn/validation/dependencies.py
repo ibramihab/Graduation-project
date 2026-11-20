@@ -4,12 +4,13 @@ For each interface the step changes (Cisco-like and Huawei devices):
   - an access VLAN / trunk VLANs / an SVI (interface Vlan10) need that VLAN to exist
   - access settings need the port in access mode, trunk settings need trunk mode
   - an IP address on a switch port needs the port to be routed ("no switchport")
-  - an ACL applied to an interface must be defined
 For the device:
-  - a static route's next hop must be in a connected subnet (and not its own address)
+  - a static route's next hop must not be its own address
   - an OSPF "network" line should match at least one interface address
 For the plan:
   - two connected devices that both get new addresses should share a subnet
+(a missing access VLAN, an undefined ACL and a next hop outside every connected subnet
+ are checked in validator.py, so each problem is reported only once.)
 
 A VLAN is only reported missing when we really know the device's VLANs (from its
 config backup), so VLANs created by hand earlier are not reported by mistake.
@@ -63,7 +64,7 @@ def _interface(step, interface, warnings):
         elif mode != "access":
             warnings.append(f"{name}: missing prerequisite - {label} gets access VLAN {access} but the "
                             f"port is not set to access mode (add '{hint['access']}')")
-        need_vlan(access, f"access VLAN of {label}")
+        # (a missing access VLAN is warned about in validator.py)
 
     trunk = after.trunk_vlans(interface)
     if trunk is None or trunk:
@@ -82,12 +83,7 @@ def _interface(step, interface, warnings):
             need_vlan(int(interface[len(prefix):]), f"used by {label}")
             break
 
-    defined = {a.lower() for a in after.acls()}
-    for acl in after.acls_used(interface):
-        if acl.lower() not in defined:
-            warnings.append(f"{name}: missing prerequisite - ACL '{acl}' is applied on {label} but it is "
-                            "not defined (in this plan or the saved config); an undefined ACL does not "
-                            "filter anything")
+    # (an access list that is used but not defined is warned about in validator.py)
 
 
 def _all_addresses(config):
@@ -98,16 +94,12 @@ def _routes(step, errors, warnings):
     before_routes = {line for _, _, line in step.before.routes()}
     addresses = _all_addresses(step.after)
     own = {ip for ip, _ in addresses}
-    connected = [net for _, net in addresses if net]
-    every_mask_known = addresses and all(net for _, net in addresses)
     for network, hop, line in step.after.routes():
         if line in before_routes:
             continue
         if hop in own:
             errors.append(f"{step.name}: '{line}' uses the device's own address {hop} as next hop")
-        elif every_mask_known and not any(hop in net for net in connected):
-            warnings.append(f"{step.name}: missing prerequisite - next hop {hop} in '{line}' is not in "
-                            f"any connected subnet ({', '.join(map(str, connected))}); the route won't work")
+        # (a next hop outside every connected subnet is warned about in validator.py)
 
 
 def _ospf(step, warnings):
