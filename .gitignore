@@ -5,3 +5,8 @@ __pycache__/
 *.pyc
 .venv/
 venv/
+
+# Vendor documentation pasted from the vendor (.txt, e.g. Cisco guides) stays on each laptop:
+# copyrighted and big. Our own short notes (.md) go to GitHub for the whole team.
+ibn/vendors/*/docs/*
+!ibn/vendors/*/docs/*.md

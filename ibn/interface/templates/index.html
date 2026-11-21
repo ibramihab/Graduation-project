@@ -148,6 +148,12 @@
   pre { background: #17191c; color: #d9dce0; border: 1px solid var(--line); padding: 10px; border-radius: 6px;
         overflow-x: auto; white-space: pre-wrap; direction: ltr; text-align: left; font-size: 13px; }
   .error { color: var(--error-text); } .warn { color: var(--warning); } .ok { color: var(--good); }
+  .risk { display: inline-block; padding: 2px 10px; border-radius: 4px; font-weight: 700; color: #111; }
+  .risk.LOW { background: var(--good); } .risk.MEDIUM { background: var(--warning); }
+  .risk.HIGH { background: #f39c12; } .risk.CRITICAL { background: var(--critical); color: #fff; }
+  .risk.PASS { background: var(--good); } .risk.WARNING { background: var(--warning); }
+  .risk.FAIL { background: var(--critical); color: #fff; } .risk.SKIPPED { background: #6b7079; color: #fff; }
+  .question { color: var(--s1); }
   .small-text { font-size: 12px; color: var(--muted); margin: 6px 0; }
   hr { border: 0; border-top: 1px solid var(--line); margin: 12px 0; }
   #graph { flex: 1; min-height: 200px; border-radius: 6px; background-color: #1b1d21;
@@ -305,7 +311,7 @@
             <h3>Add / edit a device</h3>
             <p class="small-text">Same name = update. Username empty = use the one in <b>.env</b>.
                Password: type a new one to change it, leave empty to keep it.
-               Interfaces: needed by the AI for routing; add the mask (/24) if you can.</p>
+               Interfaces: needed by the AI for routing; add the mask (/24) if you can; empty = keep them.</p>
             <div class="inline">
               <input id="d-name" placeholder="Name (R1)">
               <input id="d-ip" placeholder="IP (192.168.1.1)">
@@ -375,17 +381,42 @@ async function sendIntent() {
   const plan = await post("/api/intent", {text: document.getElementById("intent").value});
   if (plan.error) { box.innerHTML = `<p class="error">${esc(plan.error)}</p>`; return; }
 
+  // The request was missing something: the AI asks instead of guessing.
+  if (plan.question) {
+    box.innerHTML = `<p class="question"><b>&#10067; The AI needs more details:</b>
+      <span dir="auto">${esc(plan.question)}</span></p>
+      <p class="small-text">Add the answer to your request and click Make a plan again.</p>`;
+    return;
+  }
   let html = `<p><b>Plan:</b> <span dir="auto">${esc(plan.summary)}</span></p>`;
-  if (plan.attempts > 1) html += `<p class="warn">The AI's first plan failed the safety checks, so it corrected it.</p>`;
+  if (plan.attempts > 1) html += plan.validation.ok
+    ? `<p class="warn">The AI's first plan failed the safety checks, so it corrected it.</p>`
+    : `<p class="warn">The AI tried twice, but the plan still fails the safety checks (see below).</p>`;
   for (const c of plan.changes) {
     const kind = c.type === "check" ? "check (read-only, normal mode)" : "config (changes the device)";
     html += `<p><b>${esc(c.device)}</b> &mdash; ${kind}</p><pre>${esc(c.commands.join("\n"))}</pre>`;
     if (c.type !== "check")
       html += `<details><summary>Rollback (undo) commands</summary><pre>${esc(c.rollback.join("\n"))}</pre></details>`;
+    if (c.verify && c.verify.length)
+      html += `<details><summary>Verify after applying (post-validation)</summary><pre>${esc(c.verify.join("\n"))}</pre></details>`;
   }
   const v = plan.validation;
   html += v.errors.map(e => `<p class="error">&#10007; ${esc(e)}</p>`).join("");
   html += v.warnings.map(w => `<p class="warn">&#9888; ${esc(w)}</p>`).join("");
+  if (v.risk) {  // risk score from the validation layer: level + why
+    html += `<p><b>Risk:</b> <span class="risk ${esc(v.risk.level)}">${esc(v.risk.level)} ${v.risk.score}/100</span></p>
+             <details><summary>Why this score</summary><ul class="small-text">
+             ${v.risk.reasons.map(r => `<li>${esc(r)}</li>`).join("")}</ul></details>`;
+    if (v.ok && v.risk.level === "CRITICAL")
+      html += `<p class="error">Critical risk: read the reasons above before you approve.</p>`;
+  }
+  const bf = v.batfish;  // optional Batfish analysis (shown only when it ran)
+  if (bf && (bf.status !== "SKIPPED" || bf.results.length)) {
+    html += `<p><b>Batfish analysis:</b> <span class="risk ${esc(bf.status)}">${esc(bf.status)}</span></p>
+             <details><summary>Batfish checks</summary><ul class="small-text">
+             ${bf.results.map(r => `<li><b>${esc(r.status)}</b> ${esc(r.check)}: ${esc(r.message)}</li>`).join("")}
+             </ul></details>`;
+  }
   if (v.ok) {
     html += `<p class="ok">&#10003; Validation passed</p>
              <button onclick="run(this, () => approve('${plan.id}'))">Approve &amp; apply</button>`;
@@ -398,7 +429,10 @@ async function approve(id) {
   box.innerHTML += `<p class="small-text"><span class="spinner"></span>Applying to the devices...</p>`;
   const r = await post("/api/approve/" + id);
   let html = `<h3 class="${r.success ? "ok" : "error"}">${r.success ? "Done!" : "Failed"} ${esc(r.error || "")}</h3>`;
-  for (const x of r.results) html += `<p><b>${esc(x.device)}</b>: ${esc(x.status)}</p><pre>${esc(x.output)}</pre>`;
+  for (const x of r.results) {
+    const color = x.status.includes("fail") ? "error" : x.status === "verified" ? "ok" : "";
+    html += `<p><b>${esc(x.device)}</b>: <span class="${color}">${esc(x.status)}</span></p><pre>${esc(x.output)}</pre>`;
+  }
   box.innerHTML = html;
   load();
 }
@@ -755,6 +789,8 @@ async function history_(name) {
       ${statuses ? `<span class="when"> (${esc(statuses)})</span>` : ""}
       <div dir="auto"><i>"${esc(c.intent)}"</i></div>
       <ul>${(c.commands || []).map(cmd => `<li>${esc(cmd)}</li>`).join("")}</ul>
+      ${(c.warnings || []).length ? `<details><summary>Warnings when approved (${c.warnings.length})</summary>
+        <ul>${c.warnings.map(w => `<li>⚠ ${esc(w)}</li>`).join("")}</ul></details>` : ""}
       ${output ? `<details><summary>Show device output</summary><pre>${esc(output)}</pre></details>` : ""}
     </div>`;
   }

@@ -77,9 +77,11 @@ def create_app(kb=None, llm=None) -> Flask:
         #   password empty                -> keep the saved password (the page never shows it)...
         #   ...unless username is empty too -> forget both: use the full .env login
         # Interfaces typed by hand (one per line), for devices "Find links" can't read (e.g. simulated).
-        # Box empty = no interfaces typed (the Edit button fills the box with the saved ones).
+        # Box empty = keep the saved interfaces (like the password box).
         if "interfaces" in request.json:
-            device["interfaces"] = interface_list(request.json["interfaces"]) or None
+            device["interfaces"] = interface_list(request.json["interfaces"])
+            if not device["interfaces"]:
+                del device["interfaces"]
         username_empty = "username" in request.json and not request.json["username"]
         password_empty = not request.json.get("password")
         if username_empty:

@@ -1,10 +1,16 @@
 {
-  // Hide folders that tools create automatically, so VS Code only shows the project's own files.
+  // Hide files you never need to open, so the Explorer only shows the project's own files.
+  // They are only HIDDEN in VS Code: they still exist and still work (Git, GitHub, Python use them).
+  // To see them again: delete a line here (or set it to false).
   "files.exclude": {
     "**/__pycache__": true,
     "**/.pytest_cache": true,
     "venv": true,
-    ".venv": true
+    ".venv": true,
+    ".vs": true,
+    ".github": true,
+    ".gitattributes": true,
+    ".gitignore": true
   },
   // Don't search inside the installed libraries.
   "search.exclude": {

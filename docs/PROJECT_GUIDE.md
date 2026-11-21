@@ -106,11 +106,11 @@ Graduation-project/
 ├── requirements.txt               [CORE]     list of Python libraries the project needs
 ├── .env                           [CORE]     YOUR settings + secrets (not on GitHub)
 ├── .env.example                   [SUPPORT]  template for .env
-├── docker-compose.yml             [OPTIONAL] starts the Neo4j graph database
 ├── README.md                      [SUPPORT]  short user manual
 ├── CHANGELOG.md                   [SUPPORT]  list of every change, newest first
 ├── docs/PROJECT_GUIDE.md          [SUPPORT]  this guide
 ├── lab/VPN_lab_config_...txt      [SUPPORT]  the Cisco configs for your EVE-NG lab (notes, not code)
+├── evaluation/                    [SUPPORT]  AI tests: run_tests.py, tests.json, lab.json (scores the plans)
 ├── .gitignore                     [SUPPORT]  tells Git which files never to upload
 ├── .gitattributes                 [SUPPORT]  keeps .bat files in Windows format
 ├── .vscode/settings.json          [SUPPORT]  hides the [AUTO] folders in VS Code
@@ -127,18 +127,30 @@ Graduation-project/
 │   │
 │   ├── intent/                    LAYER 2
 │   │   ├── llm.py                 [CORE]     talks to the AI (Claude or Ollama)
-│   │   └── translator.py          [CORE]     instructions + examples for the AI, the plan shape
+│   │   ├── translator.py          [CORE]     instructions + examples for the AI, the plan shape
+│   │   ├── rag/                   [OPTIONAL] RAG: sources.py, embedder.py, index.py, retriever.py
+│   │   └── plan_log.py            [SUPPORT]  saves every plan in data/plans.csv
 │   │
 │   ├── validation/                LAYER 3
-│   │   └── validator.py           [CORE]     the safety checks
+│   │   ├── validator.py           [CORE]     the safety checks (calls the files below)
+│   │   ├── config_model.py                   a small model of a device's config (before/after)
+│   │   ├── state.py                          what a device looks like now (backup + history)
+│   │   ├── rollback.py                       does the rollback really undo the change?
+│   │   ├── conflicts.py                      VLAN / IP / interface conflicts
+│   │   ├── dependencies.py                   missing prerequisites (VLANs, port modes, ACLs...)
+│   │   ├── risk.py                           risk score 0-100 + level + reasons
+│   │   └── batfish_check.py                  (optional) Batfish: network before vs after the plan
 │   │
-│   ├── vendors/                   USED BY ALL LAYERS: one file per vendor
-│   │   ├── base.py                [CORE]     what a vendor file contains (VendorProfile)
+│   ├── vendors/                   USED BY ALL LAYERS: one FOLDER per vendor
+│   │   ├── base.py                [CORE]     what a vendor profile contains (VendorProfile)
 │   │   ├── __init__.py            [CORE]     the list of vendors
-│   │   ├── cisco_ios.py           [CORE]     Cisco IOS (your EVE-NG lab)
-│   │   ├── huawei.py, fortigate.py, cisco_nxos.py, arista_eos.py,
-│   │   │   mikrotik_routeros.py   [OPTIONAL] other vendors
-│   │   └── simulated.py           [OPTIONAL] the fake device (acts like Cisco IOS)
+│   │   ├── cisco_ios/             [CORE]     Cisco IOS (your EVE-NG lab):
+│   │   │   ├── profile.py                    the rules for every layer
+│   │   │   ├── examples.json                 solved requests for the AI (RAG)
+│   │   │   └── docs/                         Cisco documentation as .txt (RAG; stays on your laptop)
+│   │   ├── huawei/, fortigate/, cisco_nxos/, arista_eos/,
+│   │   │   mikrotik_routeros/     [OPTIONAL] other vendors (profile.py; examples.json later)
+│   │   └── simulated/             [OPTIONAL] the fake device (acts like Cisco IOS, uses its examples)
 │   │
 │   ├── control/                   LAYER 4
 │   │   └── controller.py          [CORE]     apply, rollback, check steps, history
@@ -152,10 +164,9 @@ Graduation-project/
 │   │       └── simulated.py       [OPTIONAL] fake device for practice and tests
 │   │
 │   └── knowledge/                 SHARED COMPONENT
-│       ├── __init__.py            [CORE]     picks file or Neo4j storage
+│       ├── __init__.py            [CORE]     gives the knowledge base (JSON file storage)
 │       ├── base.py                [CORE]     the rules every storage must follow
-│       ├── file_graph.py          [CORE*]    graph stored in data/knowledge.json
-│       ├── neo4j_graph.py         [CORE*]    graph stored in Neo4j        (*you need one of the two)
+│       ├── file_graph.py          [CORE]     graph stored in data/knowledge.json
 │       └── graph_analysis.py      [OPTIONAL] graph questions: path, what-if, critical devices
 │
 ├── tests/                         [SUPPORT]  automatic tests (run: pytest)
@@ -168,7 +179,7 @@ Graduation-project/
 ```
 
 **Why VS Code looked overwhelming:** `venv/` alone contains thousands of files
-(Flask, Netmiko, Neo4j... all their code). None of it is yours. The real
+(Flask, Netmiko... all their code). None of it is yours. The real
 project is about **25 small files, ~1,450 lines** in total. The new
 `.vscode/settings.json` hides the [AUTO] folders so you only see your code.
 
@@ -195,7 +206,6 @@ the `venv`, installs libraries (first time only), then runs `run.py`.
 | `flask` | web server (interface) | yes |
 | `anthropic` | Claude AI (`llm.py`) | only if you use Claude |
 | `requests` | Ollama AI (`llm.py`) | only if you use Ollama |
-| `neo4j` | Neo4j storage | only if `KB_BACKEND=neo4j` |
 | `networkx` | graph questions (`graph_analysis.py`) | yes (installed automatically) |
 | `netmiko` | SSH/Telnet to devices | yes (for real devices) |
 | `paramiko<4` | SSH library under Netmiko; pinned because version 4+ can't talk to older Cisco IOS | yes |
@@ -203,11 +213,8 @@ the `venv`, installs libraries (first time only), then runs `run.py`.
 | `pytest` | runs tests | only for testing |
 
 **`.env`** (your copy) / **`.env.example`** (template). All settings in one place: which
-AI, which storage, device login, `DRY_RUN`. Why a separate file: secrets
+AI, the knowledge-base file, device login, `DRY_RUN`. Why a separate file: secrets
 (API keys, passwords) must never be uploaded to GitHub, and `.gitignore` protects `.env`.
-
-**`docker-compose.yml`**. One command (`docker compose up -d`) starts the Neo4j database.
-*Remove it* if you only use `KB_BACKEND=file`.
 
 **`.gitignore`**. Tells Git never to upload `.env`, `data/`, `venv/`, caches. *Needed* (protects secrets).
 
@@ -293,7 +300,7 @@ request, answer in exactly this JSON shape".
 
 ### Layer 3: Validation (`ibn/validation/`)
 
-**`validator.py`** (112 lines). `validate(plan) → {"ok", "errors", "warnings"}`. Checks:
+**`validator.py`**. `validate(plan) → {"ok", "errors", "warnings", "risk"}`. Basic checks:
 1. the device exists in the knowledge base
 2. there is a driver for its vendor
 3. the device isn't "down"
@@ -304,7 +311,46 @@ request, answer in exactly this JSON shape".
 7. physical interface names (`Ethernet0/0`, `Gi0/1`, `GE0/0/1`...) really exist on that device
 8. a risky change on a single point of failure gets a warning saying what would be cut off
 
-Errors **block** the plan (no Approve button). Warnings are shown, you decide.
+**Advanced checks.** They read what the knowledge base knows about a device (its config
+backup `last_config`, the history, the interface IPs) into a small config model
+(`config_model.py`, `state.py`), then **simulate** the plan: *before* → *after* the
+commands → *after the rollback*. Only Cisco-like and Huawei configs are simulated line by
+line; FortiGate and MikroTik get simpler rules.
+
+9. **Rollback** (`rollback.py`): the rollback must bring every changed item back to how it
+   was. Explains what is not removed / not restored. **Error** if the rollback would delete
+   something that existed *before* the change (e.g. `no vlan 10` when VLAN 10 was in use),
+   tries to delete a physical port, uses the wrong word (`no` vs Huawei `undo`), contains a
+   check command, or leaves a FortiGate block without `end`.
+10. **Conflicts** (`conflicts.py`): invalid VLAN IDs, deleting/renaming default VLANs,
+    renaming a VLAN, a VLAN name already used, the same VLAN ID with another name on another
+    switch, an IP already used elsewhere, overlapping subnets on one device,
+    network/broadcast addresses, one setting given two values in a plan, changes to the
+    interface that holds the management IP. Only what the plan **changes** is checked, so
+    existing valid config is never reported.
+11. **Prerequisites** (`dependencies.py`): VLANs must exist (only when the backup lists
+    them), access/trunk settings need the right port mode, an IP on a switch port needs
+    `no switchport`, applied ACLs must be defined, static route next hops must be in a
+    connected subnet, OSPF `network` lines must match an interface, both ends of a link
+    should get addresses in the same subnet.
+12. **Risk score** (`risk.py`): 0-100 = command severity (30) + device criticality (20) +
+    topology impact (15) + affected devices (15) + rollback (10) + conflicts/prerequisites (10).
+    0-24 LOW, 25-49 MEDIUM, 50-74 HIGH, 75-100 CRITICAL, with one reason per part.
+
+13. **Batfish** (`batfish_check.py`, optional, Cisco IOS / IOS-XE): Batfish builds a model of
+    the whole network from the configs, once for today (**baseline**) and once with the plan
+    applied (**proposed**), and compares them: config validity, undefined references (e.g. an
+    ACL applied but never defined), lost routes, forwarding loops, traffic that would be
+    dropped, ACL lines that can never match. Each check is PASS / WARNING / FAIL; a FAIL is an
+    error, a WARNING a warning. Baseline configs come only from real data: the device's
+    `last_config` backup, or a file `<name>.cfg` in `BATFISH_CONFIG_DIR`. Devices with neither
+    (or another vendor) are SKIPPED. Off until `BATFISH_HOST` is set in `.env`:
+    `docker run -d -p 9996:9996 batfish/batfish`, then `BATFISH_HOST=localhost`.
+    Try it with the sample network in `tests/batfish_sample/configs/` (R1 - R2 - R3, OSPF):
+    `BATFISH_CONFIG_DIR=tests/batfish_sample/configs`. Tests: `TEST_BATFISH=1 pytest`.
+
+Errors **block** the plan (no Approve button), and are sent back to the AI for one more
+try. Warnings and the risk are shown, you decide (a CRITICAL risk does not block).
 
 The rule **lists** themselves are in the vendor files (next section).
 👉 To add a safety rule you add one line to `blocked` or `warn` in `ibn/vendors/<vendor>.py`.
@@ -380,11 +426,7 @@ and links by hand, but the AI needs the interface IPs it collects.
 **`file_graph.py`** (72 lines): the graph stored in one JSON file (`data/knowledge.json`):
 `{"devices": {...}, "links": [["R1","R2"]], "changes": {...}}`. No install needed.
 
-**`neo4j_graph.py`** (63 lines): the same methods using the Neo4j graph database
-(Cypher queries like `MERGE (a)-[:CONNECTED_TO]-(b)`). Devices are nodes,
-links are `CONNECTED_TO` relationships, history is `(Device)-[:HAS_CHANGE]->(Change)`.
-
-**`__init__.py`**: `get_knowledge_base()` picks one of the two from `KB_BACKEND` in `.env`.
+**`__init__.py`**: `get_knowledge_base()` gives the JSON-file storage (a database could be added there later).
 
 ➡ More detail on the knowledge base, the pipeline, `__init__.py`, `templates`/`static`: **Part 3B**.
 
@@ -392,8 +434,7 @@ links are `CONNECTED_TO` relationships, history is `(Device)-[:HAS_CHANGE]->(Cha
 
 **`test_ibn.py`**: 13 tests of the whole flow using a fake AI and simulated devices
 (validation blocks dangerous commands, rollback works, check steps are read-only, the
-AI retries after errors...). Each test runs twice: with file storage and (if
-`TEST_NEO4J=1`) with Neo4j.
+AI retries after errors...).
 Run all tests: `venv\Scripts\python -m pytest`. **Run them after every change.** If they
 pass, you didn't break anything. *Not needed to run the program*, but they are your safety net.
 
@@ -413,7 +454,7 @@ Ours do one of three things:
 |---|---|---|
 | `ibn/__init__.py`, `interface/__init__.py`, `infrastructure/__init__.py` | only a comment | just marks the folder as part of the program |
 | `intent/__init__.py`, `validation/__init__.py`, `control/__init__.py` | e.g. `from .translator import translate` | **shortcut**: `from ibn.intent import translate` instead of `from ibn.intent.translator import translate` |
-| `knowledge/__init__.py` | `get_knowledge_base()` | **decision**: JSON-file storage or Neo4j, based on `KB_BACKEND` in `.env` |
+| `knowledge/__init__.py` | `get_knowledge_base()` | gives the knowledge base (JSON-file storage) |
 | `drivers/__init__.py` | `DRIVERS` + `get_driver()` | **vendor list**: `cisco_ios → CliDriver`, `simulated → SimulatedDriver` |
 
 Never delete them.
@@ -487,9 +528,9 @@ These two folder names are a **Flask convention** (Flask looks for exactly these
 |---|---|---|---|
 | Device (node) | name, ip, vendor, protocol | you (Save device), Scan | everyone |
 | `state` | `up` / `down` | Refresh up/down | validation (blocks devices that are down) |
-| `interfaces` | `Ethernet0/0 10.1.2.1` | Find links & IPs | the AI (real names and IPs), validation (checks names) |
+| `interfaces` | `Ethernet0/0 10.1.2.1` | Find links & IPs | the AI (real names and IPs), validation (checks names, IP conflicts) |
 | Link (edge) | R1 — R2 | you (Link), Find links (CDP) | the topology graph |
-| `last_config` | full `show running-config` text | control layer, **before** every change (backup) | you, to restore by hand |
+| `last_config` | full `show running-config` text | control layer, **before** every change (backup) | you, to restore by hand; validation (VLANs, ports, ACLs the device already has) |
 | History (Change) | time, request, commands, success, device output | control layer, after every plan | the History button |
 | `username`/`password` (optional) | per-device login | you (Save device) | drivers only, **never** sent to the AI or shown on the page |
 
@@ -522,38 +563,12 @@ why the storage can be swapped.
 same moment from damaging the file. Simple, no installation, and you can open the file in
 VS Code to see exactly what the system knows.
 
-**3. `neo4j_graph.py`: the same graph in a real graph database.** Same functions, but each
-sends a query in Neo4j's language, **Cypher**:
+**3. `__init__.py`: where the storage is chosen.** `get_knowledge_base()` returns the JSON-file
+storage. Because every storage follows `base.py`, a database could be added later in this one
+place, and the rest of the program would never know.
 
-| Function | Cypher (simplified) | Meaning |
-|---|---|---|
-| `add_device` | `MERGE (d:Device {name: "R1"}) SET d += {...}` | create the node if missing, set its properties |
-| `add_link` | `MERGE (a)-[:CONNECTED_TO]-(b)` | connect two nodes (no duplicates) |
-| `list_links` | `MATCH (a)-[:CONNECTED_TO]-(b) RETURN a.name, b.name` | find all connections |
-| `record_change` | `CREATE (d)-[:HAS_CHANGE]->(:Change {...})` | attach a history node to the device |
-| `delete_device` | `DETACH DELETE d` | remove the node and all its edges |
-
-At startup it also makes device names **unique**. History is saved as JSON text inside each
-Change node (Neo4j properties can't hold nested lists). Advantages: you can **see** the
-network as a graph at http://localhost:7474, and later ask graph questions ("path from SW1
-to SW3?", "which devices depend on R2?").
-
-**4. `__init__.py`: the switch.** `get_knowledge_base()` reads `KB_BACKEND` from `.env`:
-`neo4j` → Neo4j, anything else → the JSON file. The rest of the program never knows which.
-
-| | JSON file (`file`) | Neo4j (`neo4j`) |
-|---|---|---|
-| Setup | none | Neo4j Desktop, or Docker + `docker compose up -d` |
-| See it | open `data/knowledge.json` | graph picture at localhost:7474 |
-| Best for | everyday use, no installation | presentation (graph picture), very big networks, sharing one database in a team |
-
-Switching is one line in `.env`, but you add your devices again: the two storages don't share data.
-
-**Users don't have to install Neo4j.** The JSON file is the default and needs nothing.
-Graph questions (below) work with both storages.
-
-**5. `graph_analysis.py`: graph questions (NetworkX).** Reads the devices and links from
-whichever storage is active, builds the graph in memory with the **NetworkX** library
+**4. `graph_analysis.py`: graph questions (NetworkX).** Reads the devices and links from
+the knowledge base, builds the graph in memory with the **NetworkX** library
 (installed automatically, nothing for users to install), and answers:
 
 | Function | Question | Example answer (your lab) |
@@ -593,13 +608,11 @@ The **minimal core** (what the system can't run without) is:
 run.py, requirements.txt, .env, ibn/settings.py, ibn/pipeline.py,
 interface/ (web.py, index.html, vis-network.min.js), intent/ (llm.py, translator.py),
 validation/validator.py, vendors/ (base.py, __init__.py, your vendors), control/controller.py,
-drivers/ (__init__.py, base.py, cli.py), knowledge/ (base.py + ONE of the two storages)
+drivers/ (__init__.py, base.py, cli.py), knowledge/ (base.py, file_graph.py)
 ```
 
 | You could remove | Saves | You lose |
 |---|---|---|
-| `neo4j_graph.py` + `docker-compose.yml` + `neo4j` library | ~80 lines + Docker | the "real graph database" (your original requirement) |
-| `file_graph.py` | ~70 lines | running without Docker; the tests use it |
 | `discovery.py` + 3 buttons | ~90 lines | ping scan, up/down, auto links, **interface IPs for the AI** |
 | `simulated.py` | ~30 lines | practising without devices; the tests use it |
 | `start.bat`, `update.bat`, `lab/`, `docs/` | nothing in the program | convenience and notes |
@@ -627,7 +640,7 @@ Behind a contract you can change anything:
 | **The plan** (JSON shape) | `translator.py` `PLAN_SCHEMA` | change the AI, the checks, or the executor independently |
 | **`ask_json()`** | `llm.py` | swap/add any AI (Claude, Ollama, GPT, a fine-tuned model) |
 | **`Driver`** | `drivers/base.py` | add any vendor or access method (SSH, web, REST, NETCONF, SDN) |
-| **`KnowledgeBase`** | `knowledge/base.py` | swap storage (JSON, Neo4j, another DB) |
+| **`KnowledgeBase`** | `knowledge/base.py` | swap storage (JSON today, a database later) |
 
 **Can existing files be modified, or do they serve only one task?** Every file can be
 modified and extended. The rule is simple:
@@ -655,8 +668,9 @@ modified and extended. The rule is simple:
 ## Part 6: How to upgrade each layer (where to edit)
 
 ### Add a vendor
-1. Copy a file in `ibn/vendors/` (e.g. `huawei.py`) to `ibn/vendors/<new>.py` and change
-   the values (Netmiko type, commands, dangerous commands, AI examples).
+1. Copy a vendor folder in `ibn/vendors/` (e.g. `huawei/`) to `ibn/vendors/<new>/` and change
+   `profile.py` (Netmiko type, commands, dangerous commands, AI rules). Optionally add
+   `examples.json` (solved requests for the AI).
 2. Add it to the list in `ibn/vendors/__init__.py`.
 3. Only if it needs special handling (e.g. Juniper's `commit`): a small driver class
    and one line in `DRIVERS` (`drivers/__init__.py`).
@@ -714,7 +728,6 @@ Add methods to `knowledge/base.py`, implement them in both storages, fill them f
 | **schema** | the exact allowed shape of some JSON |
 | **LLM / prompt** | the AI model / the instructions + question we send it |
 | **Netmiko / Paramiko** | Python libraries for SSH/Telnet to network devices |
-| **Neo4j / Cypher** | a graph database / its query language |
 | **venv** | a private folder of libraries for this project only |
 | **pytest** | the tool that runs the automatic tests |
 | **Git / commit / push / pull** | version history / save a checkpoint / upload / download |

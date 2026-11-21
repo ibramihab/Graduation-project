@@ -1,5 +1,5 @@
 """MikroTik RouterOS."""
-from .base import VendorProfile
+from ..base import VendorProfile
 
 PROFILE = VendorProfile(
     name="mikrotik_routeros",

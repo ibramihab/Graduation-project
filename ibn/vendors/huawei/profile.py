@@ -1,5 +1,5 @@
 """Huawei VRP (routers and switches: AR, NE, S series...)."""
-from .base import VendorProfile
+from ..base import VendorProfile
 
 PROFILE = VendorProfile(
     name="huawei",

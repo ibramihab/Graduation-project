@@ -8,7 +8,7 @@ This is a 4-person graduation project: a small, layered **Intent-Based Networkin
 | Layer | Folder |
 |---|---|
 | 1 Interface | `ibn/interface/` (web.py, templates/index.html) |
-| 2 Intent (AI) | `ibn/intent/` + the `ai_hints` in `ibn/vendors/*.py` |
+| 2 Intent (AI) | `ibn/intent/` (incl. `rag/`) + `evaluation/` (AI tests) + the AI parts of each vendor folder: `ai_hints` in `ibn/vendors/<vendor>/profile.py`, `examples.json`, `docs/` |
 | 3 Validation | `ibn/validation/` |
 | 4 Control | `ibn/control/` |
 | 5 Infrastructure | `ibn/infrastructure/` (drivers, discovery) + `ibn/vendors/` |
@@ -30,7 +30,7 @@ This is a 4-person graduation project: a small, layered **Intent-Based Networkin
    **Adding** new methods, fields or URLs is fine; **renaming or removing** them breaks others.
 3. **Shared files** (`index.html`, `web.py`, `pipeline.py`, `requirements.txt`, `CHANGELOG.md`):
    keep edits small and only where needed.
-4. **Run the tests before every commit:** `python -m pytest` (no AI, lab or Neo4j needed).
+4. **Run the tests before every commit:** `python -m pytest` (no AI or lab needed).
    Add a test for new behavior in `tests/test_ibn.py`.
 5. **Git:** work on the teammate's own branch (`ebraam`, `asmaa`, `menna`, `heba`), never
    commit directly to `main`. Changes reach `main` through a Pull Request.

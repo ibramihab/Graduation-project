@@ -57,6 +57,12 @@ class CliDriver(Driver):
         output = self.conn.send_command(self.profile.show_interfaces)
         return self.profile.parse_interfaces(output)  # -> ["Ethernet0/0 10.1.2.1", ...]
 
+    def get_vlans(self):
+        if not self.profile.show_vlans:
+            return []
+        output = self.conn.send_command(self.profile.show_vlans)
+        return self.profile.parse_vlans(output)  # a router answers "% Invalid input" -> []
+
     def get_neighbors(self):
         # Cisco Discovery Protocol tells us who is plugged into this device.
         if self.profile.neighbors != "cdp":

@@ -44,7 +44,7 @@ text ─► intent.translate() ─► validation.validate() ─► [you click Ap
 |---|---|---|
 | You type a request | `interface/templates/index.html` | The page sends it to `POST /api/intent` |
 | **Intent** | `intent/translator.py` | Sends the request + the device list with their interface IPs (no passwords) to the LLM. The LLM must answer in a fixed JSON shape: a list of steps, each with a device, a `type`, `commands` and `rollback` (undo) commands. Type `config` changes the device (configuration mode); type `check` runs read-only commands like `ping` / `show` (normal mode, no rollback). |
-| **Validation** | `validation/validator.py` + the vendor's file in `vendors/` | Device exists? Vendor supported? Device up? Commands present? Any dangerous command for that vendor (`reload`, `erase`, `no username`, ...)? Errors **block** the plan; warnings are shown to you. |
+| **Validation** | `validation/validator.py` + the vendor's file in `vendors/` | Device exists? Vendor supported? Device up? Commands present? Any dangerous command for that vendor (`reload`, `erase`, `no username`, ...)? Does the rollback really undo the change? VLAN / IP / interface conflicts? Missing prerequisites? Optional **Batfish** analysis of the network before vs after (Cisco IOS). Plus a **risk score** (LOW / MEDIUM / HIGH / CRITICAL) with reasons. Errors **block** the plan; warnings are shown to you. |
 | You click Approve | `pipeline.py` | The plan is validated **again** (the network could have changed). |
 | **Control** | `control/controller.py` | For each `config` step: connect, save a config backup to the knowledge base, send commands. If any device fails, the rollback runs on every device already changed. `check` steps just run and show their output. Everything goes into the device's history. |
 | **Infrastructure** | `infrastructure/drivers/` | The code that actually talks to devices (see below). |
@@ -112,29 +112,9 @@ The network is naturally a graph, so we store it as one:
 Device properties: name, ip, vendor, protocol, state (up/down), last_config (backup)
 ```
 
-There are two storage options with the **same** methods (`knowledge/base.py`):
-
-| `KB_BACKEND` | File | When to use |
-|---|---|---|
-| `file` (default) | `knowledge/file_graph.py` | Learning. Nothing to install. Saves to `data/knowledge.json`. |
-| `neo4j` | `knowledge/neo4j_graph.py` | The real graph database. |
-
-To use Neo4j: install [Neo4j Desktop](https://neo4j.com/download) (no Docker needed, create a local database with password `password123`), or with Docker:
-
-```bash
-docker compose up -d                # starts Neo4j
-# in .env:  KB_BACKEND=neo4j
-python run.py
-```
-
-Open http://localhost:7474 (user `neo4j`, password `password123`) and run
-`MATCH (n) RETURN n` to **see** your network as a graph.
-
-`TEST_NEO4J=1 pytest` also runs all the tests against Neo4j. **Warning:** it
-deletes all devices in that Neo4j, so only use it on an empty test database.
-
-**Neo4j is optional.** Users don't need to install it: the default JSON file works
-everywhere, and the graph questions below work with both storages.
+Everything is saved in one JSON file, `data/knowledge.json` (`knowledge/file_graph.py`).
+Nothing to install. The methods are defined in `knowledge/base.py`, so a database could be
+added later without changing the other layers.
 
 ### When your network changes
 
@@ -212,9 +192,9 @@ tried, but a local AI on a laptop was too slow for it). A new driver can add the
 ## 6. How to grow it (where each upgrade goes)
 
 ### Add a new CLI vendor (e.g. Juniper, HP, Palo Alto)
-1. Copy a file in `ibn/vendors/` (e.g. `huawei.py`) and change the values: its Netmiko
+1. Copy a vendor folder in `ibn/vendors/` (e.g. `huawei/`) and change `profile.py`: its Netmiko
    type ([list](https://github.com/ktbyers/netmiko/blob/develop/PLATFORMS.md)), commands,
-   dangerous commands, and a few examples for the AI.
+   dangerous commands and rules for the AI. Optionally add `examples.json` (RAG knowledge).
 2. Add it to the list in `ibn/vendors/__init__.py`.
 
 That's all: the driver, the validation and the web drop-down pick it up automatically.
@@ -272,7 +252,5 @@ ibn/
   infrastructure/drivers/      one file per way of talking to devices
   knowledge/base.py            the knowledge base methods
   knowledge/file_graph.py      graph in a JSON file
-  knowledge/neo4j_graph.py     graph in Neo4j
 tests/test_ibn.py              tests for the whole flow
-docker-compose.yml             starts Neo4j
 ```

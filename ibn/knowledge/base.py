@@ -7,7 +7,7 @@ The knowledge base is the system's memory of the network, stored as a GRAPH:
     Device properties                      <- state (up/down) and last config backup
 
 Every layer talks to the knowledge base ONLY through the methods below,
-so we can swap the storage (JSON file, Neo4j, ...) without touching any layer.
+so the storage (today a JSON file, later maybe a database) can be swapped without touching any layer.
 
 A device is a plain dict, for example:
     {"name": "R1", "ip": "192.168.1.1", "vendor": "cisco_ios",

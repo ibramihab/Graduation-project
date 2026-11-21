@@ -1,0 +1,17 @@
+{
+  "_about": "The fixed test network for run_tests.py (not your real devices). Names and IPs are different from the RAG examples on purpose, so the AI can't just copy them.",
+  "devices": [
+    {"name": "R1", "ip": "10.1.12.1", "vendor": "simulated", "state": "up",
+     "interfaces": ["Ethernet0/0 10.1.12.1/24", "Ethernet0/1 172.31.1.1/24", "Ethernet0/2 10.1.13.1/24"]},
+    {"name": "R2", "ip": "10.1.12.2", "vendor": "simulated", "state": "up",
+     "interfaces": ["Ethernet0/0 10.1.12.2/24", "Ethernet0/1 10.1.24.2/24", "Ethernet0/2 172.31.2.1/24"]},
+    {"name": "R3", "ip": "10.1.13.3", "vendor": "simulated", "state": "up",
+     "interfaces": ["Ethernet0/0 10.1.13.3/24", "Ethernet0/1 172.31.3.1/24"]},
+    {"name": "R4", "ip": "10.1.24.4", "vendor": "simulated", "state": "up",
+     "interfaces": ["Ethernet0/0 10.1.24.4/24", "Ethernet0/1 172.31.4.1/24", "Ethernet0/2"]},
+    {"name": "SW1", "ip": "172.31.1.11", "vendor": "simulated", "state": "up",
+     "interfaces": ["Vlan1 172.31.1.11/24", "Ethernet0/0", "Ethernet0/1", "Ethernet0/2", "Ethernet0/3"]}
+  ],
+  "links": [["R1", "R2"], ["R1", "R3"], ["R2", "R4"], ["R1", "SW1"]],
+  "notes": "LANs: 172.31.1.0/24 behind R1 (SW1), 172.31.2.0/24 behind R2, 172.31.3.0/24 behind R3, 172.31.4.0/24 behind R4 (server 172.31.4.100)."
+}
