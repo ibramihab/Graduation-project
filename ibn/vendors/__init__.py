@@ -1,5 +1,5 @@
 """Vendor profiles: one folder per vendor with everything specific to it
-(profile.py = its rules, examples.json = its AI knowledge; see base.py).
+(profile.py = its rules, docs/ = its AI knowledge; see base.py).
 
 To add a vendor: copy a similar folder, change it, and add it to the list below.
 The order of the list is the order of the vendor drop-down on the web page.

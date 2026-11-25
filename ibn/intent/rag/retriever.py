@@ -1,7 +1,7 @@
 """Ask every enabled source (RAG_SOURCES) for its chunks, keep the closest ones, build the text.
 
     retrieve("on R3 add a route to 10.0.1.0/24", ["cisco_ios"])
-        -> "Similar requests that were solved correctly:\n\nRequest: ...\n{...}"   ("" = nothing found)
+        -> "Vendor notes and solved examples ...:\n\n[static_routes] Static route ..."   ("" = nothing found)
 """
 from ... import settings
 from .embedder import scores

@@ -7,27 +7,20 @@ ibn/vendors/
   base.py                <- what a vendor profile contains (VendorProfile)
   cisco_ios/
     profile.py           <- the rules: login type, show commands, dangerous commands, AI rules
-    examples.json        <- the AI's knowledge (RAG): solved requests
-    docs/                <- the vendor's documentation as .txt files (RAG; stays on your laptop)
+    docs/                <- the AI's knowledge (RAG): one .md file per topic, notes + solved examples
   huawei/
-    profile.py           <- examples.json can be added any time, no code change
+    profile.py           <- a docs/ folder can be added any time, no code change
 ```
 
-## Adding an example (the best way to make the AI better)
-1. Test the commands AND the rollback on the EVE-NG lab first: they must really work.
-2. Add it to `examples.json` in the same format as the others:
-   `{"intent": "...", "plan": {"summary": "...", "changes": [{"device", "type", "commands", "rollback"}]}}`
-   - "config" steps need a rollback that really undoes them; "check" steps have `"rollback": []`.
-   - Use different wordings, different names/IPs, and some Arabic requests.
-3. Run `python -m pytest`: a test checks that every Cisco example passes the validation layer.
+## Adding knowledge (the best way to make the AI better)
+Open the topic's file in `<vendor>/docs/` (e.g. `static_routes.md`) and add a note or an example under
+the right `## ` heading. The format is explained in `cisco_ios/docs/README.md`.
+1. Test the commands AND the undo commands first: they must really work.
+2. At most 3 examples per heading: for a new case, add a new heading.
+3. Run `python -m pytest`: a test checks the format and that every example passes the validation layer.
 
-The program notices changed examples by itself (no extra command).
-
-## Adding documentation
-`<vendor>/docs/` (see the README there): `.md` = our own short notes (on GitHub), `.txt` = text pasted
-from the vendor (stays on your laptop: copyright and size). The program cuts them into small pieces and
-sends the AI only the closest ones.
+The program notices changed files by itself (no extra command).
 
 ## Adding a vendor
 Copy a similar folder, change `profile.py`, add the vendor to the list in `__init__.py`.
-`examples.json` is optional: without it the AI just gets the profile's `ai_hints`.
+`docs/` is optional: without it the AI just gets the profile's `ai_hints`.
