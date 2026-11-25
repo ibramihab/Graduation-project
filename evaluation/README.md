@@ -4,7 +4,11 @@
 python evaluation\run_tests.py                  every test, RAG off then on
 python evaluation\run_tests.py --rag on         only with RAG
 python evaluation\run_tests.py --only dhcp trunk
+python evaluation\run_tests.py --quick --rag off   only the 15 quick tests, without RAG
 ```
+
+`--quick` runs the 15 tests marked `"quick": true` in `tests.json`: every topic (routes, OSPF, ACL, VLAN,
+trunk, DHCP, interface, check, refusal, 2 in Arabic), so a slow laptop gets a result in a few minutes.
 
 - Uses your AI settings from `.env` (`LLM_PROVIDER`, `OLLAMA_MODEL`...). Ollama must be running.
 - Uses the fixed test network in `lab.json`, NOT your devices, and sends nothing to any device.

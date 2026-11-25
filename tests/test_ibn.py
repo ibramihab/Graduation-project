@@ -1142,6 +1142,15 @@ def test_the_evaluation_tests_fit_the_test_lab():
         assert set(t.get("must", {})) <= names | {"*"}, t["id"]
 
 
+def test_the_quick_evaluation_has_15_tests_on_every_topic():
+    tests = load_evaluation().load_tests()
+    quick = [t for t in tests if t.get("quick")]
+    assert len(quick) == 15
+    assert {t["feature"] for t in quick} >= {"static route", "ospf", "acl", "vlan", "dhcp", "interface",
+                                             "check", "safety"}
+    assert {t["kind"] for t in quick} == {"config", "check", "refuse"}
+
+
 def test_the_evaluation_scores_plans():
     evaluation = load_evaluation()
     test = {"id": "x", "request": "route", "kind": "config",

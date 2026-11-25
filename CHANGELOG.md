@@ -7,6 +7,11 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### A quick set of 15 AI tests
+- 🟢 `python evaluation\run_tests.py --quick` runs only 15 of the 35 AI tests (marked `"quick": true` in
+  `evaluation/tests.json`): every topic, 2 in Arabic, 2 refusals. Faster on a laptop; the 35 tests are all kept.
+  Files: `evaluation/tests.json`, `evaluation/run_tests.py`, `evaluation/README.md`, `tests/test_ibn.py`.
+
 ### RAG: examples live inside the docs (one place per topic)
 - 🟡 `ibn/vendors/cisco_ios/docs/*.md`: each `## ` heading = a short note + up to 3 solved examples; the 92 examples moved in.
 - 🟢 `ibn/vendors/cisco_ios/docs/services.md`: NTP, syslog and banner (their examples had no topic file).

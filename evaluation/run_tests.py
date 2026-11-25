@@ -3,6 +3,7 @@
     python evaluation/run_tests.py                 # every test, RAG off and on
     python evaluation/run_tests.py --rag on        # only with RAG
     python evaluation/run_tests.py --only route-1 dhcp
+    python evaluation/run_tests.py --quick         # only the 15 quick tests (marked "quick": true)
 
 It uses YOUR AI settings from .env (LLM_PROVIDER, OLLAMA_MODEL...), the fixed test network in
 evaluation/lab.json (not your devices) and the requests in evaluation/tests.json.
@@ -201,10 +202,14 @@ def main():
     parser = argparse.ArgumentParser(description="Score the AI's plans on a fixed list of requests.")
     parser.add_argument("--rag", choices=["on", "off", "both"], default="both")
     parser.add_argument("--only", nargs="*", help="test ids to run (default: all)")
+    parser.add_argument("--quick", action="store_true",
+                        help='only the 15 quick tests ("quick": true in tests.json): every topic, faster')
     args = parser.parse_args()
     sys.stdout.reconfigure(encoding="utf-8", errors="replace")  # Windows console + Arabic
 
     tests = [t for t in load_tests() if not args.only or t["id"] in args.only]
+    if args.quick:
+        tests = [t for t in tests if t.get("quick")]
     rag_modes = {"on": [True], "off": [False], "both": [False, True]}[args.rag]
     settings.PLAN_LOG = ""  # this command saves its own results file
     print(f"Model: {plan_log.model_name()}   Tests: {len(tests)}   Nothing is sent to devices.")
