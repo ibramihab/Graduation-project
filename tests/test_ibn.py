@@ -1149,6 +1149,17 @@ def test_the_quick_evaluation_has_15_tests_on_every_topic():
     assert {t["feature"] for t in quick} >= {"static route", "ospf", "acl", "vlan", "dhcp", "interface",
                                              "check", "safety"}
     assert {t["kind"] for t in quick} == {"config", "check", "refuse"}
+    assert sorted(t["level"] for t in quick) == [1] * 5 + [2] * 5 + [3] * 5  # 3 levels of 5
+    assert all("level" not in t for t in tests if not t.get("quick"))
+
+
+def test_the_evaluation_scores_each_level():
+    evaluation = load_evaluation()
+    rows = [{"rag": "off", "level": 1, "mark": "PASS"}, {"rag": "off", "level": 1, "mark": "FAIL"},
+            {"rag": "off", "level": 3, "mark": "HALF"}, {"rag": "off", "level": "", "mark": "PASS"}]
+    assert [(t["level"], t["PASS"], t["HALF"], t["FAIL"], t["total"]) for t in evaluation.levels(rows)] == [
+        (1, 1, 0, 1, 2), (3, 0, 1, 0, 1)]
+    assert "Level 1, RAG off: 1/2 PASS" in evaluation.level_summary(rows)
 
 
 def test_the_evaluation_scores_plans():

@@ -7,6 +7,12 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### The 15 quick AI tests in 3 levels
+- 🟢 The 15 quick tests are split into 3 levels of 5 (`"level"` in `evaluation/tests.json`): 1 simple, 2 harder,
+  3 scenarios. The results show a score per level (screen + "By level" table in the HTML report);
+  `--level 1` runs only one level. Files: `evaluation/tests.json`, `evaluation/run_tests.py`,
+  `evaluation/README.md`, `tests/test_ibn.py`.
+
 ### A quick set of 15 AI tests
 - 🟢 `python evaluation\run_tests.py --quick` runs only 15 of the 35 AI tests (marked `"quick": true` in
   `evaluation/tests.json`): every topic, 2 in Arabic, 2 refusals. Faster on a laptop; the 35 tests are all kept.

@@ -4,6 +4,7 @@
     python evaluation/run_tests.py --rag on        # only with RAG
     python evaluation/run_tests.py --only route-1 dhcp
     python evaluation/run_tests.py --quick         # only the 15 quick tests (marked "quick": true)
+    python evaluation/run_tests.py --level 1       # only the 5 quick tests of level 1 (1, 2 or 3)
 
 It uses YOUR AI settings from .env (LLM_PROVIDER, OLLAMA_MODEL...), the fixed test network in
 evaluation/lab.json (not your devices) and the requests in evaluation/tests.json.
@@ -35,7 +36,7 @@ from ibn import pipeline, settings  # noqa: E402
 from ibn.intent import get_llm, plan_log  # noqa: E402
 from ibn.knowledge.file_graph import FileGraph  # noqa: E402
 
-COLUMNS = ["rag", "id", "feature", "request", "mark", "seconds", "attempts", "problems", "plan"]
+COLUMNS = ["rag", "level", "id", "feature", "request", "mark", "seconds", "attempts", "problems", "plan"]
 
 
 def load_lab(path=HERE / "lab.json"):
@@ -108,7 +109,7 @@ def run(tests: list[dict], llm, rag_modes: list[bool], show=print) -> list[dict]
                 return rows
             except Exception as error:  # any other problem: count it as a failed plan and go on
                 plan, mark, problems = {}, "FAIL", [f"error: {error}"]
-            row = {"rag": "on" if rag else "off", "id": test["id"], "feature": test.get("feature", ""),
+            row = {"rag": "on" if rag else "off", "level": test.get("level", ""), "id": test["id"], "feature": test.get("feature", ""),
                    "request": test["request"], "mark": mark, "seconds": plan.get("seconds", ""),
                    "attempts": plan.get("attempts", ""), "problems": "\n".join(problems),
                    "plan": "\n".join(f'{c["device"]}: ' + " | ".join(c["commands"]) for c in plan.get("changes", []))}
@@ -147,6 +148,28 @@ def save(rows: list[dict], folder="data/evaluation") -> str:
     return base + ".html"
 
 
+# The 15 quick tests are split into 3 levels of 5 ("level" in tests.json), each harder than the last.
+LEVEL_NAMES = {1: "simple: one device, everything given",
+               2: "harder: several steps, a protocol, Arabic, a reachability check",
+               3: "scenarios: several devices, a goal instead of commands, a vague request"}
+
+
+def levels(rows: list[dict]) -> list[dict]:
+    """Per level and RAG mode: how many PASS / HALF / FAIL (only rows that have a level)."""
+    result = []
+    for level in sorted({r["level"] for r in rows if r.get("level")}):
+        for rag in dict.fromkeys(r["rag"] for r in rows):
+            mine = [r for r in rows if r.get("level") == level and r["rag"] == rag]
+            result.append({"level": level, "rag": rag, "total": len(mine),
+                           **{m: sum(r["mark"] == m for r in mine) for m in ("PASS", "HALF", "FAIL")}})
+    return result
+
+
+def level_summary(rows: list[dict]) -> str:
+    return "\n".join(f"Level {t['level']}, RAG {t['rag']:3}: {t['PASS']}/{t['total']} PASS, {t['HALF']} HALF, "
+                     f"{t['FAIL']} FAIL   ({LEVEL_NAMES.get(t['level'], '')})" for t in levels(rows))
+
+
 # ---------- the HTML report ----------
 STYLE = """
 body { font-family: Segoe UI, Arial, sans-serif; margin: 24px; color: #222; background: #fafafa; }
@@ -174,7 +197,7 @@ def report(rows: list[dict]) -> str:
                     f'{t["HALF"]} HALF, {t["FAIL"]} FAIL, average {t["average"]} per plan</div>' for t in totals(rows))
     marks = {(r["id"], r["rag"]): r for r in rows}
     compare = "".join(
-        f'<tr><td>{e(t["id"])}</td><td>{e(t["feature"])}</td><td dir="auto">{e(t["request"])}</td>'
+        f'<tr><td>{t["level"]}</td><td>{e(t["id"])}</td><td>{e(t["feature"])}</td><td dir="auto">{e(t["request"])}</td>'
         + "".join(f'<td class="{marks[(t["id"], m)]["mark"]}">{marks[(t["id"], m)]["mark"]}</td>'
                   f'<td>{marks[(t["id"], m)]["seconds"]}</td>' if (t["id"], m) in marks else "<td></td><td></td>"
                   for m in modes) + "</tr>"
@@ -184,13 +207,19 @@ def report(rows: list[dict]) -> str:
         f'<td dir="auto">{e(r["request"])}</td><td><pre>{e(r["plan"]) or "(no plan)"}</pre></td>'
         f'<td><pre>{e(r["problems"])}</pre></td></tr>' for r in rows)
     head = "".join(f"<th>RAG {e(m)}</th><th>seconds</th>" for m in modes)
+    by_level = "".join(
+        f'<tr><td>Level {t["level"]}</td><td>{e(LEVEL_NAMES.get(t["level"], ""))}</td><td>RAG {e(t["rag"])}</td>'
+        f'<td><b>{t["PASS"]}/{t["total"]} PASS</b>, {t["HALF"]} HALF, {t["FAIL"]} FAIL</td></tr>' for t in levels(rows))
+    level_table = (f"<h2>By level</h2><table><tr><th>Level</th><th>What it tests</th><th>RAG</th><th>Result</th></tr>"
+                   f"{by_level}</table>") if by_level else ""
     return f"""<!doctype html><html><head><meta charset="utf-8"><title>AI test results</title>
 <style>{STYLE}</style></head><body>
 <h1>AI test results</h1>
 <div class="sub">Model: {e(plan_log.model_name())} &middot; {datetime.now():%Y-%m-%d %H:%M} &middot; {len(marks)} plans</div>
 <div class="cards">{cards}</div>
+{level_table}
 <h2>Side by side</h2>
-<table><tr><th>Test</th><th>Feature</th><th>Request</th>{head}</tr>{compare}</table>
+<table><tr><th>Level</th><th>Test</th><th>Feature</th><th>Request</th>{head}</tr>{compare}</table>
 <h2>Every plan</h2>
 <table><tr><th>RAG</th><th>Test</th><th>Mark</th><th>Request</th><th>Plan (device: commands)</th><th>Problems</th></tr>{details}</table>
 <p class="sub">PASS = all required commands, validation OK, rollback present &middot; HALF = right commands, smaller problem
@@ -202,6 +231,8 @@ def main():
     parser = argparse.ArgumentParser(description="Score the AI's plans on a fixed list of requests.")
     parser.add_argument("--rag", choices=["on", "off", "both"], default="both")
     parser.add_argument("--only", nargs="*", help="test ids to run (default: all)")
+    parser.add_argument("--level", type=int, choices=[1, 2, 3],
+                        help="only the 5 quick tests of this level (1 simple, 2 harder, 3 scenarios)")
     parser.add_argument("--quick", action="store_true",
                         help='only the 15 quick tests ("quick": true in tests.json): every topic, faster')
     args = parser.parse_args()
@@ -210,6 +241,10 @@ def main():
     tests = [t for t in load_tests() if not args.only or t["id"] in args.only]
     if args.quick:
         tests = [t for t in tests if t.get("quick")]
+    if args.level:
+        tests = [t for t in tests if t.get("level") == args.level]
+    if args.quick or args.level:
+        tests.sort(key=lambda t: t["level"])  # easy first: level 1, then 2, then 3
     rag_modes = {"on": [True], "off": [False], "both": [False, True]}[args.rag]
     settings.PLAN_LOG = ""  # this command saves its own results file
     print(f"Model: {plan_log.model_name()}   Tests: {len(tests)}   Nothing is sent to devices.")
@@ -217,6 +252,8 @@ def main():
     if not rows:
         return  # nothing ran (the AI couldn't be reached): no results file
     print("\n" + summary(rows))
+    if levels(rows):
+        print(level_summary(rows))
     print(f"Report (open in the browser): {save(rows)}")
 
 
