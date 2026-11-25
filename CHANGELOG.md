@@ -7,6 +7,13 @@ Every change to the project is listed here, so nothing surprises you.
 
 ## Changes after the project guide was written
 
+### RAG: examples live inside the docs (one place per topic)
+- 🟡 `ibn/vendors/cisco_ios/docs/*.md`: each `## ` heading = a short note + up to 3 solved examples; the 92 examples moved in.
+- 🟢 `ibn/vendors/cisco_ios/docs/services.md`: NTP, syslog and banner (their examples had no topic file).
+- 🔴 `ibn/vendors/cisco_ios/examples.json` and the "examples" RAG source (`RAG_SOURCES=docs` now; "examples" is ignored).
+- 🟡 `ibn/intent/rag/sources.py`: .md docs are cut at each heading, found by the heading + its example requests.
+- 🟢 `tests/test_ibn.py`: a test checks the docs format; every example still has to pass validation.
+
 ### One check per problem (validation clean-up after merging everyone's work)
 - 🟡 `ibn/validation/validator.py`, `conflicts.py`, `dependencies.py`: checks that reported the same problem 2-4 times
   now report it once (kept the clearest one): VLAN number, IP/mask/network address, IP overlap, access VLAN,

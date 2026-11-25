@@ -146,11 +146,10 @@ Graduation-project/
 │   │   ├── __init__.py            [CORE]     the list of vendors
 │   │   ├── cisco_ios/             [CORE]     Cisco IOS (your EVE-NG lab):
 │   │   │   ├── profile.py                    the rules for every layer
-│   │   │   ├── examples.json                 solved requests for the AI (RAG)
-│   │   │   └── docs/                         Cisco documentation as .txt (RAG; stays on your laptop)
+│   │   │   └── docs/                         notes + solved examples per topic for the AI (RAG)
 │   │   ├── huawei/, fortigate/, cisco_nxos/, arista_eos/,
-│   │   │   mikrotik_routeros/     [OPTIONAL] other vendors (profile.py; examples.json later)
-│   │   └── simulated/             [OPTIONAL] the fake device (acts like Cisco IOS, uses its examples)
+│   │   │   mikrotik_routeros/     [OPTIONAL] other vendors (profile.py; docs/ later)
+│   │   └── simulated/             [OPTIONAL] the fake device (acts like Cisco IOS, uses its docs)
 │   │
 │   ├── control/                   LAYER 4
 │   │   └── controller.py          [CORE]     apply, rollback, check steps, history
@@ -670,7 +669,7 @@ modified and extended. The rule is simple:
 ### Add a vendor
 1. Copy a vendor folder in `ibn/vendors/` (e.g. `huawei/`) to `ibn/vendors/<new>/` and change
    `profile.py` (Netmiko type, commands, dangerous commands, AI rules). Optionally add
-   `examples.json` (solved requests for the AI).
+   a `docs/` folder (notes + solved examples for the AI).
 2. Add it to the list in `ibn/vendors/__init__.py`.
 3. Only if it needs special handling (e.g. Juniper's `commit`): a small driver class
    and one line in `DRIVERS` (`drivers/__init__.py`).

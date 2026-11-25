@@ -969,35 +969,78 @@ def test_ollama_keeps_the_model_loaded_15_minutes(monkeypatch):
 
 
 # ---- RAG (ibn/intent/rag/ + knowledge/) ----
+def cisco_doc_sections():
+    """(file, heading, text) of every "## " section of the Cisco docs."""
+    from pathlib import Path
+    from ibn.intent.rag.sources import sections
+    found = []
+    for path in sorted(Path("ibn/vendors/cisco_ios/docs").glob("*.md")):
+        if path.name != "README.md":
+            found += [(path.name, heading, body) for heading, body in sections(path.read_text(encoding="utf-8"))]
+    return found
+
+
+def test_the_cisco_docs_follow_the_format():
+    """The docs are written by hand by the whole team: a wrong line would silently teach the AI
+    nothing (or something wrong), so every line under an example must have a known shape."""
+    import re
+    from ibn.intent.rag.sources import read_examples
+    allowed = re.compile(r"^(Example: .+| {4}(Plan|Refuse): .+| {4}\S+ (config|undo|check):| {8}\S.*|\s*)$")
+    for name, heading, body in cisco_doc_sections():
+        lines = body.splitlines()
+        first = next((i for i, line in enumerate(lines) if line.startswith("Example:")), len(lines))
+        for line in lines[first:]:
+            assert allowed.match(line), (name, heading, line)
+        examples = read_examples(body)
+        assert len(examples) <= 3, (name, heading, "at most 3 examples per heading")
+        for e in examples:
+            changes = e["plan"]["changes"]
+            assert changes or e["plan"]["summary"], (name, e["intent"], "no steps and no Refuse: reason")
+            for c in changes:
+                assert c["commands"], (name, e["intent"], c["device"])
+                assert bool(c["rollback"]) == (c["type"] == "config"), (name, e["intent"], "undo only for config")
+
+
 def test_every_knowledge_example_passes_validation(tmp_path):
     """Examples teach the AI, so each one must be a plan our own safety checks accept."""
-    from ibn.intent.rag.sources import SOURCES
-    import json
+    from ibn.intent.rag.sources import read_examples
     kb = FileGraph(str(tmp_path / "kb.json"))
-    examples = json.loads(open("ibn/vendors/cisco_ios/examples.json", encoding="utf-8").read())
+    examples = [e for _, _, body in cisco_doc_sections() for e in read_examples(body)]
+    assert len(examples) >= 90
     for name in {c["device"] for e in examples for c in e["plan"]["changes"]}:
         kb.add_device({"name": name, "ip": "10.9.9.9", "vendor": "cisco_ios", "state": "up"})
     assert len({e["intent"] for e in examples}) == len(examples)  # no request twice
     for e in examples:
-        assert set(e) == {"intent", "plan"} and set(e["plan"]) == {"summary", "changes"}, e
-        if not e["plan"]["changes"]:  # a request that must be refused: only an explanation
-            assert e["plan"]["summary"], e["intent"]
-            continue
-        result = validate(e["plan"], kb)
-        assert result["ok"], (e["intent"], result["errors"])
-    assert len(SOURCES["examples"].chunks("cisco_ios")) == len(examples)
+        if e["plan"]["changes"]:  # (a refused request has only its reason)
+            result = validate(e["plan"], kb)
+            assert result["ok"], (e["intent"], result["errors"])
+
+
+def test_a_doc_section_is_found_by_its_heading_and_example_requests(monkeypatch, tmp_path):
+    from ibn.intent.rag import sources
+    docs = tmp_path / "cisco_ios" / "docs"
+    docs.mkdir(parents=True)
+    (docs / "routes.md").write_text(
+        "# Routes\n\n## Static route\nA note.\n\nExample: add a route on R1\n    R1 config:\n"
+        "        ip route 10.0.0.0 255.0.0.0 10.1.1.2\n    R1 undo:\n        no ip route 10.0.0.0 255.0.0.0 10.1.1.2\n\n"
+        "## Masks\n/24 = 255.255.255.0\n", encoding="utf-8")
+    monkeypatch.setattr(sources, "VENDORS_DIR", tmp_path)
+    route, masks = sources.DocsSource().chunks("cisco_ios")
+    assert route["search"] == "Static route\nadd a route on R1"  # heading + example requests
+    assert route["text"].startswith("[routes] Static route") and "no ip route" in route["text"]
+    assert masks["search"] == "Masks\n/24 = 255.255.255.0"     # no examples: found by the whole note
 
 
 def test_rag_finds_the_closest_examples(monkeypatch):
     from ibn import settings
     from ibn.intent.rag import retrieve
     text = retrieve("add a static route on R3 to 10.0.1.0/24", ["cisco_ios"])
-    assert text.startswith("Similar requests") and "ip route 192.168.2.0" in text
+    assert text.startswith("Vendor notes and solved examples") and "ip route 192.168.2.0" in text
     assert "ip route" in retrieve("add a static route on R3", ["simulated"])  # acts like Cisco IOS
     assert retrieve("add a static route", ["huawei"]) == ""                     # no knowledge folder yet
     monkeypatch.setattr(settings, "RAG_TOP_K", 1)
-    assert retrieve("add a static route on R3", ["cisco_ios"]).count("Request:") == 1
-    monkeypatch.setattr(settings, "RAG_SOURCES", ["examples", "nothing"])     # unknown source: skipped
+    assert retrieve("add a static route on R3", ["cisco_ios"]).count("[static_routes]") == 1
+    monkeypatch.setattr(settings, "RAG_SOURCES", ["docs", "nothing"])         # unknown source: skipped
     assert "ip route" in retrieve("add a static route on R3", ["cisco_ios"])
     monkeypatch.setattr(settings, "RAG_ENABLED", False)
     assert retrieve("add a static route on R3", ["cisco_ios"]) == ""
@@ -1013,17 +1056,17 @@ def test_rag_goes_into_the_prompt_only_when_enabled(monkeypatch):
             return {"summary": "x", "changes": []}
     llm = SpyLLM()
     translate("add a static route on R1", [{"name": "R1", "vendor": "simulated"}], llm)
-    assert "Similar requests that were solved correctly" in llm.system
+    assert "Vendor notes and solved examples" in llm.system
     monkeypatch.setattr(settings, "RAG_ENABLED", False)
     translate("add a static route on R1", [{"name": "R1", "vendor": "simulated"}], llm)
-    assert "Similar requests" not in llm.system
+    assert "Vendor notes and solved examples" not in llm.system
 
 
 def test_rag_embedding_numbers_are_computed_once(monkeypatch):
     from ibn import settings
     from ibn.intent.rag import embedder, retrieve
     monkeypatch.setattr(settings, "RAG_SEARCH", "embedding")
-    monkeypatch.setattr(settings, "RAG_SOURCES", ["examples"])  # one source: the request is embedded once
+    monkeypatch.setattr(settings, "RAG_SOURCES", ["docs"])  # one source: the request is embedded once
     asked = []
 
     def fake_embed(texts):  # pretend model: "static route" texts point one way, the rest another way
@@ -1058,7 +1101,7 @@ def test_rag_vendor_docs_are_cut_into_pieces_and_searched(monkeypatch, tmp_path)
     monkeypatch.setattr(settings, "RAG_SOURCES", ["docs"])
     monkeypatch.setattr(settings, "RAG_TOP_K", 1)
     text = retrieve("remove the static route with no ip route", ["simulated"])
-    assert text.startswith("Relevant parts of the vendor documentation") and "[routing]" in text
+    assert text.startswith("Vendor notes and solved examples") and "[routing]" in text
     assert "no ip route" in text and "router ospf" not in text
     assert retrieve("static route", ["huawei"]) == ""  # no docs folder: nothing, no error
 
@@ -1139,7 +1182,7 @@ def test_the_cisco_notes_are_found_for_matching_requests(monkeypatch):
     from ibn.intent.rag import retrieve
     from ibn.intent.rag.sources import DocsSource
     pieces = DocsSource().chunks("cisco_ios")
-    assert len(pieces) >= 10 and all("Cisco IOS documentation for the AI" not in p["text"] for p in pieces)  # README skipped
+    assert len(pieces) >= 10 and all("Cisco IOS knowledge for the AI" not in p["text"] for p in pieces)  # README skipped
     monkeypatch.setattr(settings, "RAG_SOURCES", ["docs"])
     monkeypatch.setattr(settings, "RAG_TOP_K", 2)
     assert "[ospf]" in retrieve("advertise a network in ospf with the wildcard mask", ["cisco_ios"])

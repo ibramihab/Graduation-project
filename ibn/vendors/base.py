@@ -7,7 +7,7 @@ Each vendor has ONE folder with everything about it (ibn/vendors/cisco_ios/, hua
         drivers     -> netmiko_type, show_config, show_interfaces, parse_interfaces,
                        error_markers, neighbors
         control     -> verify_failed (how a failed post-validation check looks)
-    examples.json   (optional) solved requests: the AI's knowledge for RAG (ibn/intent/rag/)
+    docs/           (optional) notes + solved examples: the AI's knowledge for RAG (ibn/intent/rag/)
 
 To add a vendor: copy a vendor folder, change the values in profile.py, and add it to the
 list in vendors/__init__.py. Nothing else in the project needs to change.

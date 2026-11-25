@@ -25,7 +25,7 @@ Add an item to `tests.json`:
  "must_not": ["255.255.255.0 area"]}     // optional
 ```
 Use the device names of `lab.json`, and keep tests DIFFERENT from the RAG examples
-(`ibn/vendors/<vendor>/examples.json`), or the AI just copies an example and the score lies.
+(the examples in `ibn/vendors/<vendor>/docs/`), or the AI just copies an example and the score lies.
 
 Also: every plan made on the web page is saved in `data\plans.html` (open in the browser) and `data\plans.csv`
 (setting `PLAN_LOG`).
